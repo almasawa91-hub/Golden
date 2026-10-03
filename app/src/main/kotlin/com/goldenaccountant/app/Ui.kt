@@ -31,8 +31,8 @@ fun Context.header(title:String,onBack:(()->Unit)?,vararg actions:Pair<String,()
  addView(text(title,18f,Color.WHITE,true).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(0,-2,1f))
  actions.forEach{(label,click)->addView(text(label,19f,Color.WHITE).apply{gravity=Gravity.CENTER;setOnClickListener{click()}},LinearLayout.LayoutParams(dp(52),dp(56)))}
 }
-fun Context.footer(onAdd:(()->Unit)?,label:String="")=LinearLayout(this).apply{
- orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;background=NAVY;minimumHeight=dp(54)
+fun Context.footer(onAdd: (() -> Unit)?,label:String="")=LinearLayout(this).apply{
+ orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;setBackgroundColor(NAVY);minimumHeight=dp(54)
  addView(text(label,13f,Color.WHITE).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(0,-2,1f))
  if(onAdd!=null)addView(text("+",28f,NAVY,true).apply{gravity=Gravity.CENTER;background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(GOLD)};setOnClickListener{onAdd()}},LinearLayout.LayoutParams(dp(42),dp(42)).apply{marginEnd=dp(12)})
 }
@@ -52,7 +52,7 @@ fun Context.toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
 fun String.num():BigDecimal?=map{if(it in '٠'..'٩' )('0'.code+(it-'٠')).toChar() else it}.joinToString("").replace("٫",".").trim().toBigDecimalOrNull()
 fun fmt(v:BigDecimal)=String.format(Locale.US,"%,.2f",v)
 fun fmtMicro(m:Long)=fmt(BigDecimal.valueOf(m,4))
-fun MainActivity.ask(title:String,hints:List<String>,numeric:Set<Int>=emptySet(),onOk:(List<String>)->Unit){
+fun MainActivity.ask(title:String,hints:List<String>,numeric: Set<Int> = emptySet(),onOk:(List<String>)->Unit){
  val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val fields=hints.mapIndexed{i,h->field(h,i in numeric).also{box.addView(it)}}
  androidx.appcompat.app.AlertDialog.Builder(this).setTitle(title).setView(box).setPositiveButton("حفظ"){_,_->onOk(fields.map{it.text.toString()})}.setNegativeButton("إلغاء",null).show()
 }
