@@ -20,3 +20,6 @@
 3. المخرجات: تقارير الاختبار في Artifacts.
 
 التطبيق الحالي العامل (WebView) باقٍ في مشروع GoldenAccountant-Android.zip إلى أن تكتمل النسخة الأصلية.
+
+
+<!-- APK verification branch -->
