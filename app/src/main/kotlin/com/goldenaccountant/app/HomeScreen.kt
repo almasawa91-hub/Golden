@@ -8,7 +8,7 @@ import com.goldenaccountant.core.accounting.InvoiceKind
 
 class HomeScreen:Screen{
  private var drawerOpen=false
- private val quick=listOf("فاتورة بيع" to {a:MainActivity->a.push(InvoiceListScreen(InvoiceKind.SALE))},"فاتورة شراء" to {a:MainActivity->a.push(InvoiceListScreen(InvoiceKind.PURCHASE))},"الحسابات" to {a:MainActivity->a.push(AccountsScreen())},"قبض / صرف" to {a:MainActivity->a.push(VouchersScreen())},"المخزون" to {a:MainActivity->push(ItemsScreen())},"التقارير" to {a:MainActivity->push(ReportsHubScreen())})
+ private val quick=listOf("فاتورة بيع" to {a->a.push(InvoiceListScreen(InvoiceKind.SALE))},"فاتورة شراء" to {a:MainActivity->a.push(InvoiceListScreen(InvoiceKind.PURCHASE))},"الحسابات" to {a:MainActivity->a.push(AccountsScreen())},"قبض / صرف" to {a:MainActivity->a.push(VouchersScreen())},"المخزون" to {a:MainActivity->push(ItemsScreen())},"التقارير" to {a:MainActivity->push(ReportsHubScreen())})
  override fun build(a:MainActivity):View{
   val root=LinearLayout(a).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG)}
   root.addView(a.header("المحاسب الذهبي",null,"☰" to {drawerOpen=true;a.refresh()},"⚙" to {a.push(SettingsScreen())}))
