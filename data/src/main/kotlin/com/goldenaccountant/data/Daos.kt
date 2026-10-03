@@ -22,7 +22,7 @@ abstract class JournalDao {
 
     /** ترحيل القيد داخل Transaction واحدة. القيد متوازن مسبقا لأن JournalEntry يرفض غير المتوازن. */
     @Transaction
-    suspend fun post(e: JournalEntry, refType: String? = null, refId: Long? = null): Long {
+    open suspend fun post(e: JournalEntry, refType: String? = null, refId: Long? = null): Long {
         val id = insertEntry(JournalEntryE(date = e.date, memo = e.memo, refType = refType, refId = refId))
         insertLines(e.lines.map { JournalLineE(entryId = id, accountId = it.accountId, debitMicro = it.debit.toMicro(), creditMicro = it.credit.toMicro()) })
         return id
