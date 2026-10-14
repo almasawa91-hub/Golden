@@ -26,6 +26,7 @@ class HomeScreen: Screen {
   if(drawerOpen){root.addView(drawer(a),LinearLayout.LayoutParams(-1,0,1f));return root}
   val body=LinearLayout(a).apply{orientation=LinearLayout.VERTICAL;setPadding(a.dp(14),a.dp(14),a.dp(14),a.dp(18))}
   body.addView(a.text("لوحة التحكم",20f,NAVY,true).apply{setPadding(a.dp(4),a.dp(4),0,a.dp(12))})
+  body.addView(a.text("المستخدم: ${a.currentUser?.displayName ?: "—"} • الدور: ${a.currentUser?.role?.let { RolePolicy.label(it) } ?: ""}",13f,MUTED).apply{setPadding(a.dp(4),0,0,a.dp(8))})
   val summary=GridLayout(a).apply{columnCount=2}
   val summaryValues = ArrayList<TextView>()
   listOf("المبيعات اليوم","المشتريات اليوم","الذمم المدينة","قيمة المخزون").forEach{t->
