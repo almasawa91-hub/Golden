@@ -99,7 +99,10 @@ class AccountingTest {
         assertBd("6", sourceAfter.qty)
         assertBd("8", destinationAfter.qty)
         assertBd("880", source.value + destination.value)
-        assertBd("880", sourceAfter.value + destinationAfter.value)
+        assertBd("80", sourceAfter.avgCost)
+        assertBd("50", destinationAfter.avgCost)
+        assertBd("480", sourceAfter.value)
+        assertBd("400", destinationAfter.value)
     }
 
     @Test fun insufficientStockRejectedUnlessNegativeAllowed() {
