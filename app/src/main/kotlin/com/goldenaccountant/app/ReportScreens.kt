@@ -54,7 +54,7 @@ class BalanceSheetScreen : ListScreen("المركز المالي", listOf("ال�
             if (!to.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) a.toast("أدخل التاريخ بصيغة YYYY-MM-DD")
             else { toDate = to; a.refresh() }
         } },
-        "اليوم الحالي" to { toDate = TO_ALL; a.refresh() },
+        "اليوم الحالي" to { toDate = today(); a.refresh() },
     )
     override suspend fun load(a: MainActivity): List<Row> {
         val b = a.app.accounting.balanceSheet(toDate)
