@@ -5,6 +5,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import com.goldenaccountant.data.logAudit
 
 class WarehousesScreen : ListScreen("إدارة المستودعات", listOf("المستودع", "رقم المستودع")) {
     override fun actions(a: MainActivity): List<Pair<String, () -> Unit>> = listOf(
