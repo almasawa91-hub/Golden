@@ -125,3 +125,31 @@ data class InvoiceLineE(
     val qtyMicro: Long,
     val priceMicro: Long,
 )
+
+
+/** تصنيفات مرنة للحسابات؛ يسمح AccountCategoryLinkE بإسناد الحساب لأكثر من تصنيف. */
+@Entity(tableName = "account_categories", indices = [Index(value = ["name"], unique = true)])
+data class AccountCategoryE(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val groupId: Long? = null,
+    val color: String = "#D4AF37",
+    val icon: String = "folder",
+    val sortOrder: Int = 0,
+    val enabled: Boolean = true,
+    val isSystem: Boolean = false,
+)
+
+@Entity(
+    tableName = "account_category_links",
+    foreignKeys = [
+        ForeignKey(AccountE::class, ["id"], ["accountId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(AccountCategoryE::class, ["id"], ["categoryId"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [Index(value = ["accountId", "categoryId"], unique = true), Index("categoryId")],
+)
+data class AccountCategoryLinkE(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountId: Long,
+    val categoryId: Long,
+)
