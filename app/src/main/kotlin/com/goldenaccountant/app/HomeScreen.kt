@@ -14,7 +14,9 @@ class HomeScreen: Screen {
   "الحسابات" to { a -> a.push(AccountsScreen()) },
   "قبض / صرف" to { a -> a.push(VouchersScreen()) },
   "المخزون" to { a -> a.push(ItemsScreen()) },
-  "التقارير" to { a -> a.push(ReportsHubScreen()) }
+  "التقارير" to { a -> a.push(ReportsHubScreen()) },
+  "قيد يومي" to { a -> a.push(JournalScreen(false)) },
+  "قيد افتتاحي" to { a -> a.push(JournalScreen(true)) }
  )
  override fun build(a:MainActivity):View {
   val root=LinearLayout(a).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG)}
@@ -30,8 +32,8 @@ class HomeScreen: Screen {
   quick.forEach{(label,click)->actions.addView(a.pill(label){click(a)},GridLayout.LayoutParams().apply{width=0;columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);setMargins(a.dp(5),a.dp(5),a.dp(5),a.dp(5))})}
   body.addView(actions)
   body.addView(a.text("القوائم المحاسبية",17f,NAVY,true).apply{setPadding(a.dp(4),a.dp(20),0,a.dp(10))})
-  listOf("دليل الحسابات","حركة الصندوق","ميزان المراجعة","قائمة الدخل","المركز المالي","حركة الأصناف").forEach{name->
-   body.addView(a.rowOf(name,"›").apply{setOnClickListener{when(name){"دليل الحسابات"->a.push(ChartScreen());"حركة الصندوق"->a.push(StatementScreen(-3));"ميزان المراجعة"->a.push(TrialBalanceScreen());"قائمة الدخل"->a.push(IncomeScreen());"المركز المالي"->a.push(BalanceSheetScreen());"حركة الأصناف"->a.push(StockReportScreen())}}})
+  listOf("دليل الحسابات","حركة الصندوق","ميزان المراجعة","قائمة الدخل","المركز المالي","حركة الأصناف","القيود اليومية","القيود الافتتاحية").forEach{name->
+   body.addView(a.rowOf(name,"›").apply{setOnClickListener{when(name){"دليل الحسابات"->a.push(ChartScreen());"حركة الصندوق"->a.push(StatementScreen(-3));"ميزان المراجعة"->a.push(TrialBalanceScreen());"قائمة الدخل"->a.push(IncomeScreen());"المركز المالي"->a.push(BalanceSheetScreen());"حركة الأصناف"->a.push(StockReportScreen());"القيود اليومية"->a.push(JournalScreen(false));"القيود الافتتاحية"->a.push(JournalScreen(true))}}})
   }
   root.addView(ScrollView(a).apply{addView(body)},LinearLayout.LayoutParams(-1,0,1f))
   root.addView(a.footer(null,"المخزن الرئيسي"));return root
@@ -39,9 +41,7 @@ class HomeScreen: Screen {
  private fun drawer(a:MainActivity):View {
   val box=LinearLayout(a).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(SURFACE)}
   box.addView(a.text("المحاسب الذهبي",22f,Color.WHITE,true).apply{gravity=Gravity.CENTER;setPadding(0,a.dp(28),0,a.dp(28));background=a.goldGradient()})
-  listOf("الرئيسية" to {a.back()},"المبيعات" to {a.push(InvoiceListScreen(InvoiceKind.SALE))},"المشتريات" to {a.push(InvoiceListScreen(InvoiceKind.PURCHASE))},"الحسابات" to {a.push(AccountsScreen())},"المخزون" to {a.push(ItemsScreen())},"التقارير" to {a.push(ReportsHubScreen())},"دليل الحسابات" to {a.push(ChartScreen())},"الإعدادات" to {a.push(SettingsScreen())}).forEach{(n,c)->box.addView(a.text(n,16f,TEXT,true).apply{setPadding(a.dp(22),a.dp(15),a.dp(22),a.dp(15));setOnClickListener{drawerOpen=false;c()}})}
-  box.addView(a.text("حفظ نسخة احتياطية",15f,MUTED).apply{setPadding(a.dp(22),a.dp(18),a.dp(22),a.dp(18))})
-  box.addView(a.text("استرجاع قاعدة البيانات",15f,MUTED).apply{setPadding(a.dp(22),a.dp(18),a.dp(22),a.dp(18))})
+  listOf("الرئيسية" to {a.back()},"المبيعات" to {a.push(InvoiceListScreen(InvoiceKind.SALE))},"المشتريات" to {a.push(InvoiceListScreen(InvoiceKind.PURCHASE))},"سندات القبض والصرف" to {a.push(VouchersScreen())},"القيود اليومية" to {a.push(JournalScreen(false))},"القيد الافتتاحي" to {a.push(JournalScreen(true))},"الحسابات" to {a.push(AccountsScreen())},"دليل الحسابات" to {a.push(ChartScreen())},"المخزون والأصناف" to {a.push(ItemsScreen())},"التقارير" to {a.push(ReportsHubScreen())},"الإعدادات" to {a.push(SettingsScreen())}).forEach{(n,c)->box.addView(a.text(n,16f,TEXT,true).apply{setPadding(a.dp(22),a.dp(15),a.dp(22),a.dp(15));setOnClickListener{drawerOpen=false;c()}})}
   return ScrollView(a).apply{addView(box)}
  }
 }
