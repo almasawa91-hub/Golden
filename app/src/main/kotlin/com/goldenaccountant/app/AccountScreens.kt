@@ -21,7 +21,7 @@ class AccountsScreen : ListScreen("الحسابات", listOf("الحساب", "ا
     private var categoryId: Long? = null
     private var categoryName: String = "كل الحسابات"
 
-    override fun actions(a: MainActivity) = listOf(
+    override fun actions(a: MainActivity): List<Pair<String, () -> Unit>> = listOf(
         categoryName to {
             a.lifecycleScope.launch {
                 try {
