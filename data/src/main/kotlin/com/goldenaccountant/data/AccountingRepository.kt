@@ -75,7 +75,7 @@ class AccountingRepository(private val db: AppDatabase) {
     suspend fun vouchers(): List<VoucherRow> =
         db.journal().entriesByRef("voucher", 200, 0).map { VoucherRow(it.id, it.date, it.memo, db.journal().entryTotalMicro(it.id).fromMicro()) }
 
-    suspend fun dashboardSummary(date: String = java.time.LocalDate.now().toString()): DashboardSummary {
+    suspend fun dashboardSummary(date: String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())): DashboardSummary {
         val sales = db.invoices().totalForDay(InvoiceKind.SALE.name, date).fromMicro()
         val purchases = db.invoices().totalForDay(InvoiceKind.PURCHASE.name, date).fromMicro()
         val receivables = balances(listOf(123L)).fold(BigDecimal.ZERO) { sum, b ->
