@@ -176,8 +176,11 @@ class ExpiryReportScreen : ListScreen(
         val end = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 90) }.time
         val endDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(end)
         return a.app.accounting.items()
-            .filter { item -> item.expiryDate != null && isValidIsoDate(item.expiryDate) && item.expiryDate <= endDate }
-            .sortedBy { it.expiryDate }
+            .filter { item ->
+                val expiry = item.expiryDate ?: return@filter false
+                isValidIsoDate(expiry) && expiry <= endDate
+            }
+            .sortedBy { it.expiryDate.orEmpty() }
             .map { item ->
                 val expiry = item.expiryDate.orEmpty()
                 Row(listOf(item.name, item.category, expiry, if (expiry < today) "منتهي" else "ينتهي خلال 90 يوماً"))
