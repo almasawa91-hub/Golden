@@ -14,7 +14,44 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "سعر ا
         }
     }
 }) {
+    override fun actions(a: MainActivity) = listOf("±" to { a.push(StockAdjustmentScreen()) })
     override suspend fun load(a: MainActivity) = a.app.accounting.items().map { Row(listOf(it.name, fmtMicro(it.salePriceMicro), it.barcode ?: "")) }
+}
+
+class StockAdjustmentScreen : Screen {
+    override fun build(a: MainActivity): View {
+        val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
+        root.addView(a.header("تسوية المخزون", { a.back() }))
+        val item = a.field("اسم الصنف المسجل")
+        val quantity = a.field("الكمية", true)
+        val cost = a.field("تكلفة الوحدة", true)
+        val date = a.field("التاريخ").apply { setText(today()) }
+        val receive = Switch(a).apply { text = "توريد للمخزون (إلغاء التفعيل = صرف)"; isChecked = true }
+        val form = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }
+        form.addView(a.text("تُسجّل التسوية كحركة مخزنية مستقلة. الصرف لا يسمح بتجاوز الكمية المتاحة.", 14f, MUTED))
+        listOf(item, quantity, cost, date, receive).forEach { form.addView(it) }
+        form.addView(a.pill("حفظ التسوية") {
+            val q = quantity.text.toString().num()
+            val c = cost.text.toString().num() ?: BigDecimal.ZERO
+            if (item.text.isBlank() || q == null || q.signum() <= 0) {
+                a.toast("أدخل اسم الصنف والكمية بشكل صحيح")
+            } else if (receive.isChecked && c.signum() < 0) {
+                a.toast("التكلفة لا يمكن أن تكون سالبة")
+            } else {
+                a.lifecycleScope.launch {
+                    try {
+                        a.app.accounting.adjustStock(item.text.toString(), q, c, receive.isChecked, date.text.toString())
+                        a.toast("تم حفظ تسوية المخزون")
+                        a.back()
+                    } catch (e: Exception) {
+                        a.toast(e.message ?: "تعذر حفظ التسوية")
+                    }
+                }
+            }
+        }.apply { setPadding(a.dp(18), a.dp(14), a.dp(18), a.dp(14)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(18) })
+        root.addView(ScrollView(a).apply { addView(form) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
 }
 
 class SettingsScreen : Screen {
