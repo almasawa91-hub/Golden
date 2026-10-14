@@ -17,7 +17,7 @@ class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
         root.addView(a.header(if (sale) "قائمة المبيعات" else "قائمة المشتريات", { a.back() }))
 
         val search = a.field("بحث بالرقم أو الطرف أو التاريخ أو البيان").apply {
-            singleLine = true
+            isSingleLine = true
             setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8))
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = a.dp(10).toFloat()
