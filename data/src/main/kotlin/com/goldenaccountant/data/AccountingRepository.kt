@@ -12,6 +12,7 @@ const val TO_ALL = "9999-12-31"
 data class AccountBalance(val account: AccountE, val balance: BigDecimal)
 data class StatementResult(val rows: List<StatementRow>, val accountName: String)
 data class VoucherRow(val id: Long, val date: String, val memo: String, val amount: BigDecimal)
+data class DashboardSummary(val salesToday: BigDecimal, val purchasesToday: BigDecimal, val receivables: BigDecimal, val stockValue: BigDecimal)
 
 class AccountingRepository(private val db: AppDatabase) {
 
@@ -71,6 +72,20 @@ class AccountingRepository(private val db: AppDatabase) {
 
     suspend fun vouchers(): List<VoucherRow> =
         db.journal().entriesByRef("voucher", 200, 0).map { VoucherRow(it.id, it.date, it.memo, db.journal().entryTotalMicro(it.id).fromMicro()) }
+
+    suspend fun dashboardSummary(date: String = java.time.LocalDate.now().toString()): DashboardSummary {
+        val sales = db.invoices().totalForDay(InvoiceKind.SALE.name, date).fromMicro()
+        val purchases = db.invoices().totalForDay(InvoiceKind.PURCHASE.name, date).fromMicro()
+        val receivables = balances(listOf(123L)).fold(BigDecimal.ZERO) { sum, b ->
+            sum + if (b.balance.signum() > 0) b.balance else BigDecimal.ZERO
+        }
+        val stockValue = db.stock().stockSummary().fold(BigDecimal.ZERO) { sum, row ->
+            val quantity = row.qtyMicro.fromMicro()
+            val averageCost = (row.avgMicro ?: 0L).fromMicro()
+            sum + quantity.multiply(averageCost)
+        }
+        return DashboardSummary(sales, purchases, receivables, stockValue)
+    }
 
     suspend fun stockSummary() = db.stock().stockSummary()
     suspend fun items() = db.items().page(500, 0)
