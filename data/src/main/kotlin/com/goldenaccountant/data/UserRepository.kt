@@ -49,6 +49,24 @@ class UserRepository(private val db: AppDatabase) {
         db.users().update(user.copy(active = active))
         db.logAudit(if (active) "ENABLE" else "DISABLE", "user", id, "تغيير حالة المستخدم ${user.username}")
     }
+
+    suspend fun setRole(id: Long, role: String) = db.withTransaction {
+        require(role in setOf("ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "WAREHOUSE")) { "الدور غير معروف" }
+        val user = db.users().byId(id) ?: throw IllegalArgumentException("المستخدم غير موجود")
+        if (user.active && user.role == "ADMIN" && role != "ADMIN") {
+            require(db.users().activeAdminCount() > 1) { "لا يمكن تغيير دور آخر مدير نظام نشط" }
+        }
+        db.users().update(user.copy(role = role))
+        db.logAudit("ROLE_CHANGE", "user", id, "تغيير دور ${user.username} من ${user.role} إلى $role")
+    }
+
+    suspend fun resetPassword(id: Long, newPassword: String) = db.withTransaction {
+        require(newPassword.length >= 6) { "كلمة المرور يجب ألا تقل عن 6 أحرف" }
+        val user = db.users().byId(id) ?: throw IllegalArgumentException("المستخدم غير موجود")
+        val (salt, hash) = PasswordHasher.hash(newPassword)
+        db.users().update(user.copy(passwordSalt = salt, passwordHash = hash))
+        db.logAudit("PASSWORD_RESET", "user", id, "إعادة تعيين كلمة مرور المستخدم ${user.username}")
+    }
 }
 
 suspend fun AppDatabase.logAudit(action: String, entityType: String, entityId: Long?, details: String) {
