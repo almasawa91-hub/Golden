@@ -67,6 +67,7 @@ class SettingsScreen : Screen {
             }
             body.addView(sw)
         }
+        body.addView(a.pill("بيانات المنشأة") { a.push(CompanySetupScreen(firstRun = false)) }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = a.dp(12) })
         toggle("تفعيل ضريبة القيمة المضافة", "vat_on")
         toggle("الضريبة متضمنة في السعر", "vat_inclusive")
         toggle("البيع بالكمية السالبة", "allow_negative")
@@ -77,6 +78,54 @@ class SettingsScreen : Screen {
             }
         }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(16) })
         root.addView(ScrollView(a).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+}
+
+
+class CompanySetupScreen(private val firstRun: Boolean) : Screen {
+    override fun build(a: MainActivity): View {
+        val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
+        root.addView(a.header(if (firstRun) "إعداد المنشأة لأول مرة" else "بيانات المنشأة", if (firstRun) null else ({ a.back() })))
+        val name = a.field("اسم المنشأة (مطلوب)")
+        val phone = a.field("رقم الهاتف")
+        val address = a.field("العنوان")
+        val currency = a.field("العملة الأساسية").apply { setText("YER") }
+        val taxNumber = a.field("الرقم الضريبي")
+        val form = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(18), a.dp(12), a.dp(18), a.dp(18)) }
+        form.addView(a.text("تُحفظ بيانات المنشأة على هذا الجهاز وتُستخدم في إعداد التقارير والفواتير.", 14f, MUTED))
+        listOf(name, phone, address, currency, taxNumber).forEach { form.addView(it) }
+        val save = a.pill(if (firstRun) "حفظ وبدء الاستخدام" else "حفظ البيانات") {
+            val company = name.text.toString().trim()
+            if (company.isEmpty()) {
+                a.toast("اسم المنشأة مطلوب")
+            } else if (currency.text.toString().trim().isEmpty()) {
+                a.toast("أدخل رمز العملة")
+            } else {
+                a.lifecycleScope.launch {
+                    try {
+                        a.app.settings.put("company_name", company)
+                        a.app.settings.put("company_phone", phone.text.toString().trim())
+                        a.app.settings.put("company_address", address.text.toString().trim())
+                        a.app.settings.put("company_currency", currency.text.toString().trim().uppercase())
+                        a.app.settings.put("company_tax_number", taxNumber.text.toString().trim())
+                        a.toast("تم حفظ بيانات المنشأة")
+                        if (firstRun) a.setRoot(HomeScreen()) else a.back()
+                    } catch (e: Exception) {
+                        a.toast(e.message ?: "تعذر حفظ البيانات")
+                    }
+                }
+            }
+        }
+        form.addView(save, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(16) })
+        root.addView(ScrollView(a).apply { addView(form) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        a.lifecycleScope.launch {
+            name.setText(a.app.settings.get("company_name"))
+            phone.setText(a.app.settings.get("company_phone"))
+            address.setText(a.app.settings.get("company_address"))
+            currency.setText(a.app.settings.get("company_currency", "YER"))
+            taxNumber.setText(a.app.settings.get("company_tax_number"))
+        }
         return root
     }
 }
