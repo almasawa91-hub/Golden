@@ -96,3 +96,53 @@ interface InvoiceDao {
 data class NetRow(val accountId: Long, val netMicro: Long)
 data class StmtRow(val date: String, val memo: String, val debitMicro: Long, val creditMicro: Long)
 data class StockRow(val name: String, val qtyMicro: Long, val avgMicro: Long?)
+
+
+@Dao
+interface AccountCategoryDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(category: AccountCategoryE): Long
+
+    @Update
+    suspend fun update(category: AccountCategoryE)
+
+    @Query("SELECT * FROM account_categories ORDER BY sortOrder, name")
+    suspend fun all(): List<AccountCategoryE>
+
+    @Query("SELECT * FROM account_categories WHERE enabled = 1 ORDER BY sortOrder, name")
+    suspend fun enabled(): List<AccountCategoryE>
+
+    @Query("SELECT * FROM account_categories WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): AccountCategoryE?
+
+    @Query("SELECT * FROM account_categories WHERE name = :name LIMIT 1")
+    suspend fun byName(name: String): AccountCategoryE?
+
+    @Query("DELETE FROM account_categories WHERE id = :id AND isSystem = 0")
+    suspend fun deleteCustom(id: Long): Int
+
+    @Query("UPDATE account_categories SET enabled = :enabled WHERE id = :id AND isSystem = 0")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun link(link: AccountCategoryLinkE): Long
+
+    @Query("DELETE FROM account_category_links WHERE accountId = :accountId AND categoryId = :categoryId")
+    suspend fun unlink(accountId: Long, categoryId: Long)
+
+    @Query("SELECT categoryId FROM account_category_links WHERE accountId = :accountId")
+    suspend fun categoryIdsForAccount(accountId: Long): List<Long>
+
+    @Query("SELECT accountId FROM account_category_links WHERE categoryId = :categoryId ORDER BY accountId")
+    suspend fun accountIdsForCategory(categoryId: Long): List<Long>
+
+    @Query("""SELECT c.* FROM account_categories c
+              JOIN account_category_links l ON l.categoryId = c.id
+              WHERE l.accountId = :accountId ORDER BY c.sortOrder, c.name""")
+    suspend fun categoriesForAccount(accountId: Long): List<AccountCategoryE>
+
+    @Query("""SELECT a.* FROM accounts a
+              JOIN account_category_links l ON l.accountId = a.id
+              WHERE l.categoryId = :categoryId ORDER BY a.name""")
+    suspend fun accountsForCategory(categoryId: Long): List<AccountE>
+}
