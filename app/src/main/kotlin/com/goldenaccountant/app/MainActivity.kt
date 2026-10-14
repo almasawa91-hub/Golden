@@ -51,7 +51,7 @@ class MainActivity : AppCompatActivity() {
     private fun show() { container.removeAllViews(); container.addView(stack.last().build(this)) }
 
     fun chooseBackupDestination() {
-        backupLauncher.launch("Golden-backup-\u0024{today()}.db")
+        backupLauncher.launch("Golden-backup-${today()}.db")
     }
 
     fun chooseBackupToRestore() {
@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun exportBackup(destination: Uri) {
         lifecycleScope.launch {
-            val snapshot = File(cacheDir, "golden-export-\u0024{System.currentTimeMillis()}.db")
+            val snapshot = File(cacheDir, "golden-export-${System.currentTimeMillis()}.db")
             try {
                 withContext(Dispatchers.IO) {
                     snapshot.delete()
@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun importBackup(source: Uri) {
         lifecycleScope.launch {
-            val incoming = File(cacheDir, "golden-import-\u0024{System.currentTimeMillis()}.db")
+            val incoming = File(cacheDir, "golden-import-${System.currentTimeMillis()}.db")
             try {
                 withContext(Dispatchers.IO) {
                     contentResolver.openInputStream(source)?.use { input ->
