@@ -24,23 +24,33 @@ class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : 
                     val invoice = a.app.db.invoices().byId(invoiceId) ?: throw IllegalArgumentException("الفاتورة غير موجودة")
                     val lines = a.app.db.invoices().linesForInvoice(invoiceId)
                     val cancelled = a.app.db.invoiceCancellations().byInvoiceId(invoiceId) != null
+                    val companyName = a.app.settings.get("company_name").ifBlank { "المحاسب الذهبي" }
+                    val companyPhone = a.app.settings.get("company_phone")
+                    val companyAddress = a.app.settings.get("company_address")
+                    val taxNumber = a.app.settings.get("company_tax_number")
                     val rows = mutableListOf(
+                        listOf("المنشأة", companyName),
+                        listOf("الهاتف", companyPhone),
+                        listOf("العنوان", companyAddress),
+                        listOf("الرقم الضريبي", taxNumber),
                         listOf("رقم الفاتورة", invoice.number.toString()),
                         listOf("النوع", if (sale) "بيع" else "شراء"),
                         listOf("التاريخ", invoice.date),
                         listOf("الطرف", invoice.partyName),
                         listOf("الحالة", if (cancelled) "ملغاة بعكس القيد" else if (invoice.isReturn) "مرتجع" else "نشطة"),
                         listOf("البيان", invoice.memo),
-                    )
+                    ).filter { it.size < 2 || it[1].isNotBlank() }.toMutableList()
                     lines.forEach { line ->
                         val total = line.qtyMicro.fromMicro().multiply(line.priceMicro.fromMicro())
                         rows.add(listOf(line.itemName, "الكمية " + fmtMicro(line.qtyMicro), "السعر " + fmtMicro(line.priceMicro), "الإجمالي " + fmt(total)))
                     }
+                    rows.add(listOf("الخصم", fmtMicro(invoice.discountMicro)))
                     rows.add(listOf("الصافي", fmtMicro(invoice.netMicro)))
                     rows.add(listOf("الضريبة", fmtMicro(invoice.taxMicro)))
                     rows.add(listOf("الرسوم", fmtMicro(invoice.feesMicro)))
                     rows.add(listOf("الإجمالي", fmtMicro(invoice.totalMicro)))
                     rows.add(listOf("المدفوع", fmtMicro(invoice.paidMicro)))
+                    rows.add(listOf("المتبقي", fmtMicro(invoice.totalMicro - invoice.paidMicro)))
                     a.requestReportPdf("فاتورة رقم ${invoice.number}", emptyList(), rows)
                 } catch (e: Exception) {
                     a.toast(e.message ?: "تعذر تجهيز الفاتورة")
@@ -66,6 +76,7 @@ class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : 
                 body.addView(a.rowOf("نوع العملية", if (invoice.isReturn) "مرتجع" else if (invoice.isCash) "نقدي" else "آجل"))
                 body.addView(a.rowOf("الحالة", if (cancellation != null) "ملغاة — تم عكس القيد" else if (invoice.isReturn) "مرتجع" else "نشطة"))
                 body.addView(a.rowOf("البيان", invoice.memo))
+                body.addView(a.rowOf("الخصم", fmtMicro(invoice.discountMicro)))
                 body.addView(a.rowOf("الصنف", "الكمية", "السعر", "الإجمالي", header = true))
                 lines.forEach { line ->
                     val total = line.qtyMicro.fromMicro().multiply(line.priceMicro.fromMicro())
@@ -76,6 +87,7 @@ class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : 
                 body.addView(a.rowOf("الرسوم", fmtMicro(invoice.feesMicro)))
                 body.addView(a.rowOf("الإجمالي", fmtMicro(invoice.totalMicro)))
                 body.addView(a.rowOf("المدفوع", fmtMicro(invoice.paidMicro)))
+                body.addView(a.rowOf("المتبقي", fmtMicro(invoice.totalMicro - invoice.paidMicro)))
                 if (cancellation != null) {
                     body.addView(a.text("سبب الإلغاء: ${cancellation.reason} — ${cancellation.date}", 13f, DANGER))
                 } else {
