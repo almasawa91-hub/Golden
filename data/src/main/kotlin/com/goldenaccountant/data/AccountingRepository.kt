@@ -22,7 +22,9 @@ class AccountingRepository(private val db: AppDatabase) {
         val n = name.trim()
         require(n.isNotEmpty()) { "اسم الحساب مطلوب" }
         require(db.accounts().byName(n) == null) { "الحساب موجود مسبقا" }
-        return db.accounts().insert(AccountE(name = n, groupId = groupId, phone = phone))
+        val id = db.accounts().insert(AccountE(name = n, groupId = groupId, phone = phone))
+        db.logAudit("CREATE", "account", id, "إضافة حساب: $n")
+        id
     }
 
     private suspend fun accountId(name: String): Long =
@@ -36,14 +38,18 @@ class AccountingRepository(private val db: AppDatabase) {
             val m = (amount * rate).r()
             val text = memo.ifBlank { (if (receipt) "سند قبض - " else "سند صرف - ") + accountName.trim() }
             val entry = if (receipt) PostingEngine.receipt(DEFAULT_ACCOUNTS.cash, acc, m, date, text) else PostingEngine.payment(DEFAULT_ACCOUNTS.cash, acc, m, date, text)
-            db.journal().post(entry, "voucher", null)
+            val id = db.journal().post(entry, "voucher", null)
+            db.logAudit("POST", "voucher", id, text)
+            id
         }
 
     /** قيد يدوي: يُرفض إذا لم يتوازن. */
     suspend fun journal(date: String, memo: String, lines: List<Triple<String, BigDecimal, BigDecimal>>, opening: Boolean = false): Long =
         db.withTransaction {
             val entry = JournalEntry(date, memo, lines.map { (n, d, c) -> JournalLine(accountId(n), d, c) })
-            db.journal().post(entry, if (opening) "opening" else "journal", null)
+            val id = db.journal().post(entry, if (opening) "opening" else "journal", null)
+            db.logAudit("POST", if (opening) "opening" else "journal", id, memo)
+            id
         }
 
     private suspend fun infos() = db.accounts().all().map { AccountInfo(it.id, it.name, it.groupId) }
@@ -102,23 +108,24 @@ class AccountingRepository(private val db: AppDatabase) {
             val current = StockState(currentQty, currentAvg)
             val next = if (receive) MovingAverage.receive(current, quantity, unitCost)
                 else MovingAverage.issue(current, quantity, allowNegative = false).first
-            db.stock().insert(
-                StockMovementE(
-                    itemId = item.id, warehouseId = warehouseId, date = date,
-                    kind = if (receive) "ADJUST_IN" else "ADJUST_OUT",
-                    qtyMicro = (if (receive) quantity else quantity.negate()).toMicro(),
-                    unitCostMicro = (if (receive) unitCost else currentAvg).toMicro(),
-                    avgCostMicro = next.avgCost.toMicro(),
-                    refType = "adjustment", refId = null,
-                ),
-            )
+            val id = db.stock().insert(StockMovementE(
+                itemId = item.id, warehouseId = warehouseId, date = date,
+                kind = if (receive) "ADJUST_IN" else "ADJUST_OUT",
+                qtyMicro = (if (receive) quantity else quantity.negate()).toMicro(),
+                unitCostMicro = (if (receive) unitCost else currentAvg).toMicro(),
+                avgCostMicro = next.avgCost.toMicro(), refType = "adjustment", refId = null,
+            ))
+            db.logAudit("ADJUST", "stock", id, "${item.name}: ${if (receive) "توريد" else "صرف"} ${quantity.toPlainString()}")
+            id
         }
 
     suspend fun addItem(name: String, salePrice: BigDecimal, barcode: String?): Long {
         val n = name.trim()
         require(n.isNotEmpty()) { "اسم الصنف مطلوب" }
         require(db.items().byName(n) == null) { "الصنف موجود مسبقا" }
-        return db.items().insert(ItemE(name = n, barcode = barcode?.ifBlank { null }, salePriceMicro = salePrice.toMicro()))
+        val id = db.items().insert(ItemE(name = n, barcode = barcode?.ifBlank { null }, salePriceMicro = salePrice.toMicro()))
+        db.logAudit("CREATE", "item", id, "إضافة صنف: $n")
+        id
     }
 }
 
