@@ -11,7 +11,7 @@ class TrialBalanceScreen : ListScreen("ميزان المراجعة", listOf("ا�
         "الفترة" to { a.ask("تصفية ميزان المراجعة", listOf("من تاريخ YYYY-MM-DD", "إلى تاريخ YYYY-MM-DD")) { v ->
             val from = v.getOrNull(0)?.trim().orEmpty()
             val to = v.getOrNull(1)?.trim().orEmpty()
-            if (!from.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || !to.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || from > to)
+            if (!isValidIsoDate(from) || !isValidIsoDate(to) || from > to)
                 a.toast("أدخل تاريخين صحيحين وبداية لا تتجاوز النهاية")
             else { fromDate = from; toDate = to; a.refresh() }
         } },
@@ -31,7 +31,7 @@ class IncomeScreen : ListScreen("قائمة الدخل", listOf("البند", "�
         "الفترة" to { a.ask("تصفية قائمة الدخل", listOf("من تاريخ YYYY-MM-DD", "إلى تاريخ YYYY-MM-DD")) { v ->
             val from = v.getOrNull(0)?.trim().orEmpty()
             val to = v.getOrNull(1)?.trim().orEmpty()
-            if (!from.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || !to.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || from > to)
+            if (!isValidIsoDate(from) || !isValidIsoDate(to) || from > to)
                 a.toast("أدخل تاريخين صحيحين وبداية لا تتجاوز النهاية")
             else { fromDate = from; toDate = to; a.refresh() }
         } },
@@ -51,7 +51,7 @@ class BalanceSheetScreen : ListScreen("المركز المالي", listOf("ال�
     override fun actions(a: MainActivity) = listOf(
         "حتى تاريخ" to { a.ask("المركز المالي حتى تاريخ", listOf("التاريخ YYYY-MM-DD")) { v ->
             val to = v.firstOrNull()?.trim().orEmpty()
-            if (!to.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) a.toast("أدخل التاريخ بصيغة YYYY-MM-DD")
+            if (!isValidIsoDate(to)) a.toast("أدخل تاريخاً صالحاً بصيغة YYYY-MM-DD")
             else { toDate = to; a.refresh() }
         } },
         "اليوم الحالي" to { toDate = today(); a.refresh() },

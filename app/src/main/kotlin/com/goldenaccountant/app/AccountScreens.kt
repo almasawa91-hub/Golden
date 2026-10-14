@@ -39,7 +39,7 @@ class StatementScreen(private val accountId: Long) : ListScreen("كشف حساب
         "الفترة" to { a.ask("تصفية كشف الحساب", listOf("من تاريخ YYYY-MM-DD", "إلى تاريخ YYYY-MM-DD")) { v ->
             val from = v.getOrNull(0)?.trim().orEmpty()
             val to = v.getOrNull(1)?.trim().orEmpty()
-            if (!from.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || !to.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) || from > to)
+            if (!isValidIsoDate(from) || !isValidIsoDate(to) || from > to)
                 a.toast("أدخل تاريخين صحيحين وبداية لا تتجاوز النهاية")
             else { fromDate = from; toDate = to; a.refresh() }
         } },

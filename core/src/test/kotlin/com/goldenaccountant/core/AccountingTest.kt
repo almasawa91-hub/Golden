@@ -93,13 +93,13 @@ class AccountingTest {
 
     @Test fun warehouseTransferPreservesTotalQuantityAndInventoryValue() {
         val source = StockState(bd("10"), bd("80"))
-        val destination = StockState(bd("2"), bd("30"))
+        val destination = StockState(bd("4"), bd("20"))
         val sourceAfter = MovingAverage.issue(source, bd("4")).first
         val destinationAfter = MovingAverage.receive(destination, bd("4"), source.avgCost)
         assertBd("6", sourceAfter.qty)
-        assertBd("6", destinationAfter.qty)
-        assertBd("860", source.value + destination.value)
-        assertBd("860", sourceAfter.value + destinationAfter.value)
+        assertBd("8", destinationAfter.qty)
+        assertBd("880", source.value + destination.value)
+        assertBd("880", sourceAfter.value + destinationAfter.value)
     }
 
     @Test fun insufficientStockRejectedUnlessNegativeAllowed() {
