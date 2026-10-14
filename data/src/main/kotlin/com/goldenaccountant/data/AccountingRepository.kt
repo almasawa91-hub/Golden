@@ -24,7 +24,7 @@ class AccountingRepository(private val db: AppDatabase) {
         require(db.accounts().byName(n) == null) { "الحساب موجود مسبقا" }
         val id = db.accounts().insert(AccountE(name = n, groupId = groupId, phone = phone))
         db.logAudit("CREATE", "account", id, "إضافة حساب: $n")
-        id
+        return id
     }
 
     private suspend fun accountId(name: String): Long =
@@ -125,7 +125,7 @@ class AccountingRepository(private val db: AppDatabase) {
         require(db.items().byName(n) == null) { "الصنف موجود مسبقا" }
         val id = db.items().insert(ItemE(name = n, barcode = barcode?.ifBlank { null }, salePriceMicro = salePrice.toMicro()))
         db.logAudit("CREATE", "item", id, "إضافة صنف: $n")
-        id
+        return id
     }
 }
 
