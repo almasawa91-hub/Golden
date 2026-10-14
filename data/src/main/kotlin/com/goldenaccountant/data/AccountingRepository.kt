@@ -90,6 +90,28 @@ class AccountingRepository(private val db: AppDatabase) {
     suspend fun stockSummary() = db.stock().stockSummary()
     suspend fun items() = db.items().page(500, 0)
 
+    suspend fun adjustStock(itemName: String, quantity: BigDecimal, unitCost: BigDecimal, receive: Boolean, date: String, warehouseId: Long = 1): Long =
+        db.withTransaction {
+            require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
+            require(unitCost.signum() >= 0) { "التكلفة لا يمكن أن تكون سالبة" }
+            val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
+            val currentQty = db.stock().qtyMicro(item.id, warehouseId).fromMicro()
+            val currentAvg = (db.stock().lastAvgCostMicro(item.id) ?: 0L).fromMicro()
+            val current = StockState(currentQty, currentAvg)
+            val next = if (receive) MovingAverage.receive(current, quantity, unitCost)
+                else MovingAverage.issue(current, quantity, allowNegative = false).first
+            db.stock().insert(
+                StockMovementE(
+                    itemId = item.id, warehouseId = warehouseId, date = date,
+                    kind = if (receive) "ADJUST_IN" else "ADJUST_OUT",
+                    qtyMicro = (if (receive) quantity else quantity.negate()).toMicro(),
+                    unitCostMicro = (if (receive) unitCost else currentAvg).toMicro(),
+                    avgCostMicro = next.avgCost.toMicro(),
+                    refType = "adjustment", refId = null,
+                ),
+            )
+        }
+
     suspend fun addItem(name: String, salePrice: BigDecimal, barcode: String?): Long {
         val n = name.trim()
         require(n.isNotEmpty()) { "اسم الصنف مطلوب" }
