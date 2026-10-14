@@ -3,6 +3,8 @@ package com.goldenaccountant.data
 import androidx.room.withTransaction
 import com.goldenaccountant.core.accounting.*
 import com.goldenaccountant.core.chart.ChartOfAccounts
+import com.goldenaccountant.core.inventory.MovingAverage
+import com.goldenaccountant.core.inventory.StockState
 import com.goldenaccountant.core.report.*
 import java.math.BigDecimal
 
