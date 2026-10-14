@@ -90,6 +90,7 @@ interface InvoiceDao {
     @Insert suspend fun insertLines(l: List<InvoiceLineE>)
     @Query("SELECT COUNT(*) FROM invoices WHERE kind = :k") suspend fun count(k: String): Int
     @Query("SELECT * FROM invoices WHERE kind = :k ORDER BY id DESC LIMIT :limit OFFSET :offset") suspend fun page(k: String, limit: Int, offset: Int): List<InvoiceE>
+    @Query("SELECT COALESCE(SUM(totalMicro),0) FROM invoices WHERE kind = :k AND date = :date AND isReturn = 0") suspend fun totalForDay(k: String, date: String): Long
 }
 
 data class NetRow(val accountId: Long, val netMicro: Long)
