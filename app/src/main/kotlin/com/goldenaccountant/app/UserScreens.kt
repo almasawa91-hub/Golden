@@ -95,17 +95,59 @@ class UsersScreen : ListScreen("إدارة المستخدمين", listOf("الا
         }
     }
 }) {
+    private val roleCodes = listOf("ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "WAREHOUSE")
+    private val roleLabels = listOf("مدير النظام", "مدير", "محاسب", "أمين صندوق", "أمين مخزن")
+
     override suspend fun load(a: MainActivity): List<Row> = a.users.all().map { user ->
         Row(listOf(user.displayName, user.username, RolePolicy.label(user.role), if (user.active) "نشط" else "معطّل")) {
-            if (user.id == a.currentUser?.id) a.toast("لا يمكن تغيير حالة حسابك أثناء تسجيل الدخول")
-            else AlertDialog.Builder(a).setTitle(user.displayName)
-                .setMessage(if (user.active) "تعطيل هذا المستخدم؟" else "إعادة تفعيل هذا المستخدم؟")
-                .setPositiveButton(if (user.active) "تعطيل" else "تفعيل") { _, _ ->
-                    a.lifecycleScope.launch {
-                        try { a.users.setActive(user.id, !user.active); a.refresh() }
-                        catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الحالة") }
+            if (user.id == a.currentUser?.id) {
+                a.toast("لا يمكن إدارة الحساب المستخدم حالياً من هذه الشاشة")
+            } else {
+                val options = listOf(
+                    "تغيير الدور",
+                    "إعادة تعيين كلمة المرور",
+                    if (user.active) "تعطيل المستخدم" else "تفعيل المستخدم",
+                )
+                AlertDialog.Builder(a)
+                    .setTitle(user.displayName)
+                    .setItems(options.toTypedArray()) { _, selected ->
+                        when (options[selected]) {
+                            "تغيير الدور" -> a.choose("الدور الجديد للمستخدم", roleLabels) { index ->
+                                a.lifecycleScope.launch {
+                                    try {
+                                        a.users.setRole(user.id, roleCodes[index])
+                                        a.toast("تم تحديث دور المستخدم")
+                                        a.refresh()
+                                    } catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الدور") }
+                                }
+                            }
+                            "إعادة تعيين كلمة المرور" -> a.ask("إعادة تعيين كلمة المرور", listOf("كلمة المرور الجديدة"), setOf(0)) { values ->
+                                a.lifecycleScope.launch {
+                                    try {
+                                        a.users.resetPassword(user.id, values.getOrElse(0) { "" })
+                                        a.toast("تم تحديث كلمة المرور")
+                                    } catch (e: Exception) { a.toast(e.message ?: "تعذر تحديث كلمة المرور") }
+                                }
+                            }
+                            else -> AlertDialog.Builder(a)
+                                .setTitle(options[selected])
+                                .setMessage("هل تريد المتابعة؟")
+                                .setPositiveButton("تأكيد") { _, _ ->
+                                    a.lifecycleScope.launch {
+                                        try {
+                                            a.users.setActive(user.id, !user.active)
+                                            a.toast("تم تحديث حالة المستخدم")
+                                            a.refresh()
+                                        } catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الحالة") }
+                                    }
+                                }
+                                .setNegativeButton("إلغاء", null)
+                                .show()
+                        }
                     }
-                }.setNegativeButton("إلغاء", null).show()
+                    .setNegativeButton("إلغاء", null)
+                    .show()
+            }
         }
     }
 }
