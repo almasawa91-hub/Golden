@@ -25,11 +25,13 @@ class MainActivity : AppCompatActivity() {
         })
         lifecycleScope.launch {
             AppDatabase.seed(app.db)
-            push(HomeScreen())
+            val companyName = app.settings.get("company_name").trim()
+            setRoot(if (companyName.isEmpty()) CompanySetupScreen(firstRun = true) else HomeScreen())
         }
     }
 
     fun push(s: Screen) { stack += s; show() }
+    fun setRoot(s: Screen) { stack.clear(); stack += s; show() }
     fun refresh() = show()
     fun back() { if (stack.size > 1) { stack.removeAt(stack.size - 1); show() } }
     private fun show() { container.removeAllViews(); container.addView(stack.last().build(this)) }
