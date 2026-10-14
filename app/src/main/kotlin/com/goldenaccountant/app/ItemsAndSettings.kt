@@ -12,8 +12,8 @@ import java.util.Locale
 
 class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التصنيف", "سعر البيع", "الباركود", "الصلاحية"), { a ->
     a.ask("صنف جديد", listOf(
-        "اسم الصنف", "سعر البيع", "الباركود (اختياري)", "التصنيف", "تاريخ الصلاحية YYYY-MM-DD (اختياري)", "ملاحظات",
-    ), setOf(1)) { v ->
+        "اسم الصنف", "سعر البيع", "الباركود (اختياري)", "التصنيف", "تاريخ الصلاحية YYYY-MM-DD (اختياري)", "ملاحظات", "حد إعادة الطلب (0 لتعطيل التنبيه)",
+    ), setOf(1, 6)) { v ->
         a.lifecycleScope.launch {
             try {
                 a.app.accounting.addItem(
@@ -23,6 +23,7 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التص�
                     v.getOrElse(3) { "عام" }.ifBlank { "عام" },
                     v.getOrElse(4) { "" },
                     v.getOrElse(5) { "" },
+                    v.getOrElse(6) { "" }.num() ?: BigDecimal.ZERO,
                 )
                 a.refresh()
             } catch (e: Exception) { a.toast(e.message ?: "تعذر الحفظ") }
@@ -34,6 +35,7 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التص�
         "المستودعات" to { a.push(WarehousesScreen()) },
         "⇄" to { a.push(StockTransferScreen()) },
         "الصلاحية" to { a.push(ExpiryReportScreen()) },
+        "نقص المخزون" to { a.push(LowStockReportScreen()) },
     )
     override suspend fun load(a: MainActivity) = a.app.accounting.items().map {
         Row(listOf(it.name, it.category, fmtMicro(it.salePriceMicro), it.barcode ?: "", it.expiryDate ?: "—"))
@@ -185,5 +187,23 @@ class ExpiryReportScreen : ListScreen(
                 val expiry = item.expiryDate.orEmpty()
                 Row(listOf(item.name, item.category, expiry, if (expiry < today) "منتهي" else "ينتهي خلال 90 يوماً"))
             }
+    }
+}
+
+
+class LowStockReportScreen : ListScreen(
+    "الأصناف تحت حد إعادة الطلب",
+    listOf("الصنف", "المتاح", "حد إعادة الطلب", "النقص")
+) {
+    override suspend fun load(a: MainActivity): List<Row> {
+        val items = a.app.accounting.items()
+        val quantities = a.app.db.stock().stockSummary().associate { it.name to it.qtyMicro }
+        return items.filter { item ->
+            val available = quantities[item.name] ?: 0L
+            item.minStockMicro > 0L && available < item.minStockMicro
+        }.map { item ->
+            val available = quantities[item.name] ?: 0L
+            Row(listOf(item.name, fmtMicro(available), fmtMicro(item.minStockMicro), fmtMicro(item.minStockMicro - available)))
+        }
     }
 }

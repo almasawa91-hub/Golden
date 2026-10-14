@@ -200,6 +200,7 @@ class AccountingRepository(private val db: AppDatabase) {
         category: String = "عام",
         expiryDate: String? = null,
         notes: String = "",
+        minimumStock: BigDecimal = BigDecimal.ZERO,
     ): Long {
         val n = name.trim()
         val normalizedBarcode = barcode?.trim()?.takeIf { it.isNotEmpty() }
@@ -207,6 +208,7 @@ class AccountingRepository(private val db: AppDatabase) {
         val normalizedExpiry = expiryDate?.trim()?.takeIf { it.isNotEmpty() }
         require(n.isNotEmpty()) { "اسم الصنف مطلوب" }
         require(salePrice.signum() >= 0) { "سعر البيع لا يمكن أن يكون سالباً" }
+        require(minimumStock.signum() >= 0) { "حد إعادة الطلب لا يمكن أن يكون سالباً" }
         require(normalizedCategory.isNotEmpty()) { "تصنيف الصنف مطلوب" }
         if (normalizedExpiry != null) requireValidAccountingDate(normalizedExpiry)
         require(db.items().byName(n) == null) { "الصنف موجود مسبقا" }
@@ -215,6 +217,7 @@ class AccountingRepository(private val db: AppDatabase) {
             name = n,
             barcode = normalizedBarcode,
             salePriceMicro = salePrice.toMicro(),
+            minStockMicro = minimumStock.toMicro(),
             category = normalizedCategory,
             expiryDate = normalizedExpiry,
             notes = notes.trim(),
