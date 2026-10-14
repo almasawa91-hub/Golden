@@ -55,7 +55,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun chooseBackupToRestore() {
-        restoreLauncher.launch(arrayOf("*/*"))
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("استعادة نسخة احتياطية")
+            .setMessage("ستُستبدل البيانات الحالية ببيانات النسخة المختارة. يُنصح بتصدير نسخة حالية أولاً. هل تريد المتابعة؟")
+            .setPositiveButton("اختيار النسخة") { _, _ -> restoreLauncher.launch(arrayOf("*/*")) }
+            .setNegativeButton("إلغاء", null)
+            .show()
     }
 
     private fun exportBackup(destination: Uri) {
