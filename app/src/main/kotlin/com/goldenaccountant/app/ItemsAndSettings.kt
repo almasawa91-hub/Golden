@@ -68,6 +68,10 @@ class SettingsScreen : Screen {
             body.addView(sw)
         }
         body.addView(a.pill("بيانات المنشأة") { a.push(CompanySetupScreen(firstRun = false)) }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = a.dp(12) })
+        body.addView(a.text("النسخ الاحتياطي", 16f, NAVY, true).apply { setPadding(0, a.dp(12), 0, a.dp(8)) })
+        body.addView(a.text("صدّر نسخة كاملة من قاعدة البيانات أو استعد نسخة محفوظة. يفحص التطبيق سلامة الملف قبل الاستعادة.", 13f, MUTED))
+        body.addView(a.pill("تصدير نسخة احتياطية") { a.chooseBackupDestination() }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(10) })
+        body.addView(a.pill("استعادة نسخة احتياطية") { a.chooseBackupToRestore() }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(10); bottomMargin = a.dp(14) })
         toggle("تفعيل ضريبة القيمة المضافة", "vat_on")
         toggle("الضريبة متضمنة في السعر", "vat_inclusive")
         toggle("البيع بالكمية السالبة", "allow_negative")
