@@ -57,7 +57,7 @@ class InvoiceRepository(private val db: AppDatabase) {
         val store = InMemoryStockStore()
         for (id in itemIds.values) {
             val qty = db.stock().qtyMicro(id, d.warehouseId).fromMicro()
-            val avg = (db.stock().lastAvgCostMicro(id) ?: 0L).fromMicro()
+            val avg = (db.stock().lastMovementAtWarehouse(id, d.warehouseId)?.avgCostMicro ?: 0L).fromMicro()
             store.put(id, d.warehouseId, StockState(qty, avg))
         }
         val req = InvoiceRequest(
@@ -124,7 +124,7 @@ class InvoiceRepository(private val db: AppDatabase) {
             val originalQty = movement.qtyMicro.fromMicro()
             if (originalQty.signum() == 0) continue
             val currentQty = db.stock().qtyMicro(movement.itemId, movement.warehouseId).fromMicro()
-            val currentAverage = (db.stock().lastAvgCostMicro(movement.itemId) ?: 0L).fromMicro()
+            val currentAverage = (db.stock().lastMovementAtWarehouse(movement.itemId, movement.warehouseId)?.avgCostMicro ?: 0L).fromMicro()
             val current = StockState(currentQty, currentAverage)
             val next = if (originalQty.signum() > 0) {
                 MovingAverage.issue(current, originalQty, allowNegative = false).first
