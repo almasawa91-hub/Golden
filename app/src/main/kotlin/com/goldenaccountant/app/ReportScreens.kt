@@ -65,10 +65,11 @@ class BalanceSheetScreen : ListScreen("المركز المالي", listOf("ال�
     }
 }
 
-class StockReportScreen : ListScreen("حركة الأصناف", listOf("الصنف", "الكمية", "متوسط التكلفة", "القيمة")) {
+class StockReportScreen : ListScreen("رصيد الأصناف حسب المستودع", listOf("المستودع", "الصنف", "الكمية", "متوسط التكلفة", "القيمة")) {
     override suspend fun load(a: MainActivity) = a.app.accounting.stockSummary().map {
-        val q = it.qtyMicro.fromMicro(); val avg = (it.avgMicro ?: 0L).fromMicro()
-        Row(listOf(it.name, fmt(q), fmt(avg), fmt(q * avg)))
+        val q = it.qtyMicro.fromMicro()
+        val avg = (it.avgMicro ?: 0L).fromMicro()
+        Row(listOf(it.warehouseName, it.itemName, fmt(q), fmt(avg), fmt(q * avg)))
     }
 }
 

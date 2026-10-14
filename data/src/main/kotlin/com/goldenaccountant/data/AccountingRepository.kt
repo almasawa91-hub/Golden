@@ -105,15 +105,15 @@ class AccountingRepository(private val db: AppDatabase) {
         val receivables = balances(listOf(123L)).fold(BigDecimal.ZERO) { sum, b ->
             sum + if (b.balance.signum() > 0) b.balance else BigDecimal.ZERO
         }
-        val stockValue = db.stock().stockSummary().fold(BigDecimal.ZERO) { sum, row ->
-            val quantity = row.qtyMicro.fromMicro()
-            val averageCost = (row.avgMicro ?: 0L).fromMicro()
-            sum + quantity.multiply(averageCost)
+        // Sum each warehouse at its own moving-average cost; one global average is wrong
+        // when the same item has different costs in different warehouses.
+        val stockValue = db.stock().stockByWarehouse().fold(BigDecimal.ZERO) { sum, row ->
+            sum + row.qtyMicro.fromMicro().multiply((row.avgMicro ?: 0L).fromMicro())
         }
         return DashboardSummary(sales, purchases, receivables, stockValue)
     }
 
-    suspend fun stockSummary() = db.stock().stockSummary()
+    suspend fun stockSummary() = db.stock().stockByWarehouse()
     suspend fun items() = db.items().page(500, 0)
 
     suspend fun adjustStock(itemName: String, quantity: BigDecimal, unitCost: BigDecimal, receive: Boolean, date: String, warehouseId: Long = 1): Long =
