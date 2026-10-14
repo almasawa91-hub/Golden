@@ -23,7 +23,7 @@ abstract class ListScreen(
         root.addView(a.header(title, { a.back() }, *actions(a).toTypedArray()))
 
         val search = a.field("بحث في $title").apply {
-            singleLine = true
+            isSingleLine = true
             setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10))
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = a.dp(10).toFloat()
