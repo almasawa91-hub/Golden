@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             val companyName = app.settings.get("company_name").trim()
             setRoot(when {
                 companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
-                app.users.count() == 0 -> UserSetupScreen(firstRun = true)
+                users.count() == 0 -> UserSetupScreen(firstRun = true)
                 else -> LoginScreen()
             })
         }
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                 val companyName = app.settings.get("company_name").trim()
                 setRoot(when {
                     companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
-                    app.users.count() == 0 -> UserSetupScreen(firstRun = true)
+                    users.count() == 0 -> UserSetupScreen(firstRun = true)
                     else -> LoginScreen()
                 })
                 toast("تمت استعادة النسخة الاحتياطية. سجّل الدخول مجدداً.")
