@@ -14,7 +14,11 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "سعر ا
         }
     }
 }) {
-    override fun actions(a: MainActivity) = listOf("±" to { a.push(StockAdjustmentScreen()) })
+    override fun actions(a: MainActivity) = listOf(
+        "±" to { a.push(StockAdjustmentScreen()) },
+        "المستودعات" to { a.push(WarehousesScreen()) },
+        "⇄" to { a.push(StockTransferScreen()) },
+    )
     override suspend fun load(a: MainActivity) = a.app.accounting.items().map { Row(listOf(it.name, fmtMicro(it.salePriceMicro), it.barcode ?: "")) }
 }
 

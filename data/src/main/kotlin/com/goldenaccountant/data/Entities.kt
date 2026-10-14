@@ -195,3 +195,25 @@ data class AuditLogE(
     val actorName: String,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+
+@Entity(
+    tableName = "stock_transfers",
+    foreignKeys = [
+        ForeignKey(ItemE::class, ["id"], ["itemId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(WarehouseE::class, ["id"], ["fromWarehouseId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(WarehouseE::class, ["id"], ["toWarehouseId"], onDelete = ForeignKey.RESTRICT),
+    ],
+    indices = [Index("date"), Index("itemId"), Index("fromWarehouseId"), Index("toWarehouseId")],
+)
+data class StockTransferE(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: String,
+    val itemId: Long,
+    val fromWarehouseId: Long,
+    val toWarehouseId: Long,
+    val qtyMicro: Long,
+    val unitCostMicro: Long,
+    val memo: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+)

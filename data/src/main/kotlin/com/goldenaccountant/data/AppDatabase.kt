@@ -14,9 +14,9 @@ import com.goldenaccountant.core.chart.ChartOfAccounts
         AccountGroupE::class, AccountE::class, JournalEntryE::class, JournalLineE::class,
         WarehouseE::class, ItemE::class, StockMovementE::class, CurrencyE::class,
         SettingE::class, InvoiceE::class, InvoiceLineE::class,
-        AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class, AppUserE::class, AuditLogE::class,
+        AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class, AppUserE::class, AuditLogE::class, StockTransferE::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountCategories(): AccountCategoryDao
     abstract fun users(): UserDao
     abstract fun auditLogs(): AuditLogDao
+    abstract fun stockTransfers(): StockTransferDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -101,8 +102,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS stock_transfers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    date TEXT NOT NULL,
+                    itemId INTEGER NOT NULL,
+                    fromWarehouseId INTEGER NOT NULL,
+                    toWarehouseId INTEGER NOT NULL,
+                    qtyMicro INTEGER NOT NULL,
+                    unitCostMicro INTEGER NOT NULL,
+                    memo TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    FOREIGN KEY(itemId) REFERENCES items(id) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                    FOREIGN KEY(fromWarehouseId) REFERENCES warehouses(id) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                    FOREIGN KEY(toWarehouseId) REFERENCES warehouses(id) ON UPDATE NO ACTION ON DELETE RESTRICT
+                )""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_date ON stock_transfers(date)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_itemId ON stock_transfers(itemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_fromWarehouseId ON stock_transfers(fromWarehouseId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_toWarehouseId ON stock_transfers(toWarehouseId)")
+            }
+        }
+
         fun build(ctx: Context): AppDatabase = Room.databaseBuilder(ctx, AppDatabase::class.java, "golden.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         /** تهيئة دليل الحسابات والمخزن والتصنيفات النظامية من دون استبدال بيانات المستخدم. */

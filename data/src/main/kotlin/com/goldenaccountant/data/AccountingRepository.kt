@@ -104,7 +104,7 @@ class AccountingRepository(private val db: AppDatabase) {
             require(unitCost.signum() >= 0) { "التكلفة لا يمكن أن تكون سالبة" }
             val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
             val currentQty = db.stock().qtyMicro(item.id, warehouseId).fromMicro()
-            val currentAvg = (db.stock().lastAvgCostMicro(item.id) ?: 0L).fromMicro()
+            val currentAvg = (db.stock().lastMovementAtWarehouse(item.id, warehouseId)?.avgCostMicro ?: 0L).fromMicro()
             val current = StockState(currentQty, currentAvg)
             val next = if (receive) MovingAverage.receive(current, quantity, unitCost)
                 else MovingAverage.issue(current, quantity, allowNegative = false).first
@@ -118,6 +118,48 @@ class AccountingRepository(private val db: AppDatabase) {
             db.logAudit("ADJUST", "stock", id, "${item.name}: ${if (receive) "توريد" else "صرف"} ${quantity.toPlainString()}")
             id
         }
+
+    suspend fun transferStock(
+        itemName: String,
+        fromWarehouseName: String,
+        toWarehouseName: String,
+        quantity: BigDecimal,
+        date: String,
+        memo: String = "",
+    ): Long = db.withTransaction {
+        require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
+        require(fromWarehouseName.trim().isNotEmpty() && toWarehouseName.trim().isNotEmpty()) { "اختر المستودعين" }
+        require(!fromWarehouseName.trim().equals(toWarehouseName.trim(), ignoreCase = true)) { "مستودع المصدر والوجهة يجب أن يختلفا" }
+        val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
+        val warehouses = db.warehouses().all()
+        val source = warehouses.firstOrNull { it.name.equals(fromWarehouseName.trim(), true) }
+            ?: throw IllegalArgumentException("مستودع المصدر غير موجود")
+        val destination = warehouses.firstOrNull { it.name.equals(toWarehouseName.trim(), true) }
+            ?: throw IllegalArgumentException("مستودع الوجهة غير موجود")
+        require(source.id != destination.id) { "مستودع المصدر والوجهة يجب أن يختلفا" }
+        val sourceQty = db.stock().qtyMicro(item.id, source.id).fromMicro()
+        val sourceAvg = (db.stock().lastMovementAtWarehouse(item.id, source.id)?.avgCostMicro ?: 0L).fromMicro()
+        val (sourceNext, _) = MovingAverage.issue(StockState(sourceQty, sourceAvg), quantity, allowNegative = false)
+        val destinationQty = db.stock().qtyMicro(item.id, destination.id).fromMicro()
+        val destinationAvg = (db.stock().lastMovementAtWarehouse(item.id, destination.id)?.avgCostMicro ?: 0L).fromMicro()
+        val destinationNext = MovingAverage.receive(StockState(destinationQty, destinationAvg), quantity, sourceAvg)
+        val transferId = db.stockTransfers().insert(StockTransferE(
+            date = date, itemId = item.id, fromWarehouseId = source.id, toWarehouseId = destination.id,
+            qtyMicro = quantity.toMicro(), unitCostMicro = sourceAvg.toMicro(), memo = memo.trim(),
+        ))
+        db.stock().insert(StockMovementE(
+            itemId = item.id, warehouseId = source.id, date = date, kind = "TRANSFER_OUT",
+            qtyMicro = quantity.negate().toMicro(), unitCostMicro = sourceAvg.toMicro(),
+            avgCostMicro = sourceNext.avgCost.toMicro(), refType = "transfer", refId = transferId,
+        ))
+        db.stock().insert(StockMovementE(
+            itemId = item.id, warehouseId = destination.id, date = date, kind = "TRANSFER_IN",
+            qtyMicro = quantity.toMicro(), unitCostMicro = sourceAvg.toMicro(),
+            avgCostMicro = destinationNext.avgCost.toMicro(), refType = "transfer", refId = transferId,
+        ))
+        db.logAudit("TRANSFER", "stock_transfer", transferId, "${item.name}: ${source.name} ← ${destination.name} / ${quantity.toPlainString()}")
+        transferId
+    }
 
     suspend fun addItem(name: String, salePrice: BigDecimal, barcode: String?): Long {
         val n = name.trim()

@@ -68,6 +68,8 @@ interface StockDao {
     @Query("SELECT i.name AS name, COALESCE(SUM(m.qtyMicro),0) AS qtyMicro, (SELECT avgCostMicro FROM stock_movements WHERE itemId = i.id ORDER BY id DESC LIMIT 1) AS avgMicro FROM items i LEFT JOIN stock_movements m ON m.itemId = i.id GROUP BY i.id ORDER BY i.name")
     suspend fun stockSummary(): List<StockRow>
     @Query("SELECT avgCostMicro FROM stock_movements WHERE itemId=:item ORDER BY id DESC LIMIT 1") suspend fun lastAvgCostMicro(item: Long): Long?
+    @Query("SELECT * FROM stock_movements WHERE itemId=:item AND warehouseId=:wh ORDER BY id DESC LIMIT 1")
+    suspend fun lastMovementAtWarehouse(item: Long, wh: Long): StockMovementE?
     @Query("SELECT * FROM stock_movements WHERE refType = :refType AND refId = :refId ORDER BY id DESC")
     suspend fun byRef(refType: String, refId: Long): List<StockMovementE>
 }
@@ -90,6 +92,7 @@ interface SettingDao {
 interface WarehouseDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(w: WarehouseE): Long
     @Query("SELECT * FROM warehouses ORDER BY id") suspend fun all(): List<WarehouseE>
+    @Query("SELECT * FROM warehouses WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun byName(name: String): WarehouseE?
 }
 
 @Dao
@@ -192,3 +195,31 @@ interface AuditLogDao {
     @Query("SELECT * FROM audit_logs ORDER BY createdAt DESC, id DESC LIMIT :limit OFFSET :offset")
     suspend fun recent(limit: Int, offset: Int): List<AuditLogE>
 }
+
+
+@Dao
+interface StockTransferDao {
+    @Insert suspend fun insert(transfer: StockTransferE): Long
+    @Query("""SELECT t.*, i.name AS itemName, fw.name AS fromWarehouseName, tw.name AS toWarehouseName
+        FROM stock_transfers t
+        JOIN items i ON i.id = t.itemId
+        JOIN warehouses fw ON fw.id = t.fromWarehouseId
+        JOIN warehouses tw ON tw.id = t.toWarehouseId
+        ORDER BY t.date DESC, t.id DESC""")
+    suspend fun all(): List<StockTransferRow>
+}
+
+data class StockTransferRow(
+    val id: Long,
+    val date: String,
+    val itemId: Long,
+    val fromWarehouseId: Long,
+    val toWarehouseId: Long,
+    val qtyMicro: Long,
+    val unitCostMicro: Long,
+    val memo: String,
+    val createdAt: Long,
+    val itemName: String,
+    val fromWarehouseName: String,
+    val toWarehouseName: String,
+)
