@@ -101,10 +101,14 @@ class CategoryAccountsScreen(private val categoryId: Long) : ListScreen(
         a.lifecycleScope.launch {
             val dao = a.app.db.accountCategories()
             val category = dao.byId(categoryId) ?: return@launch a.toast("التصنيف غير موجود")
-            val options = if (category.isSystem) {
-                listOf(if (category.enabled) "تعطيل التصنيف" else "تفعيل التصنيف")
-            } else {
-                listOf("تعديل اسم التصنيف", if (category.enabled) "تعطيل التصنيف" else "تفعيل التصنيف", "حذف التصنيف")
+            val options = buildList {
+                if (!category.isSystem) add("تعديل اسم التصنيف")
+                add("تغيير لون التصنيف")
+                add("تغيير أيقونة التصنيف")
+                add("تقديم التصنيف")
+                add("تأخير التصنيف")
+                add(if (category.enabled) "تعطيل التصنيف" else "تفعيل التصنيف")
+                if (!category.isSystem) add("حذف التصنيف")
             }
             AlertDialog.Builder(a)
                 .setTitle(category.name)
@@ -123,8 +127,35 @@ class CategoryAccountsScreen(private val categoryId: Long) : ListScreen(
                                 }
                             }
                         }
+                        "تغيير لون التصنيف" -> a.ask("لون التصنيف", listOf("رمز اللون HEX مثل #D4AF37")) { values ->
+                            val color = values.firstOrNull()?.trim().orEmpty().uppercase()
+                            if (!color.matches(Regex("#[0-9A-F]{6}"))) return@ask a.toast("اكتب لوناً بصيغة #RRGGBB")
+                            a.lifecycleScope.launch {
+                                try { dao.update(category.copy(color = color)); a.refresh() }
+                                catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير اللون") }
+                            }
+                        }
+                        "تغيير أيقونة التصنيف" -> a.choose("أيقونة التصنيف", listOf("folder", "person", "store", "wallet", "bank", "receipt", "trending_up", "category")) { index ->
+                            val icon = listOf("folder", "person", "store", "wallet", "bank", "receipt", "trending_up", "category")[index]
+                            a.lifecycleScope.launch {
+                                try { dao.update(category.copy(icon = icon)); a.refresh() }
+                                catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الأيقونة") }
+                            }
+                        }
+                        "تقديم التصنيف", "تأخير التصنيف" -> a.lifecycleScope.launch {
+                            try {
+                                val all = dao.all()
+                                val index = all.indexOfFirst { it.id == categoryId }
+                                val nextIndex = if (options[index] == "تقديم التصنيف") index - 1 else index + 1
+                                if (index < 0 || nextIndex !in all.indices) return@launch a.toast("وصل التصنيف إلى حد الترتيب")
+                                val neighbor = all[nextIndex]
+                                dao.update(category.copy(sortOrder = neighbor.sortOrder))
+                                dao.update(neighbor.copy(sortOrder = category.sortOrder))
+                                a.refresh()
+                            } catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الترتيب") }
+                        }
                         "تعطيل التصنيف", "تفعيل التصنيف" -> a.lifecycleScope.launch {
-                            dao.setEnabled(categoryId, !category.enabled)
+                            dao.update(category.copy(enabled = !category.enabled))
                             a.refresh()
                         }
                         "حذف التصنيف" -> AlertDialog.Builder(a)
