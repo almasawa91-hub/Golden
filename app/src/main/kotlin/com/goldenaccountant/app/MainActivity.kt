@@ -21,7 +21,7 @@ class MainActivity : AppCompatActivity() {
     private val stack = ArrayList<Screen>()
     private lateinit var container: FrameLayout
     val app: App get() = application as App
-    val users: com.goldenaccountant.data.UserRepository get() = com.goldenaccountant.data.UserRepository(app.db)
+    fun userRepository(): com.goldenaccountant.data.UserRepository = com.goldenaccountant.data.UserRepository(app.db)
     var currentUser: com.goldenaccountant.data.AppUserE? = null
         private set
     fun setCurrentUser(user: com.goldenaccountant.data.AppUserE?) { currentUser = user }
@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             val companyName = app.settings.get("company_name").trim()
             setRoot(when {
                 companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
-                users.count() == 0 -> UserSetupScreen(firstRun = true)
+                userRepository().count() == 0 -> UserSetupScreen(firstRun = true)
                 else -> LoginScreen()
             })
         }
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                 val companyName = app.settings.get("company_name").trim()
                 setRoot(when {
                     companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
-                    users.count() == 0 -> UserSetupScreen(firstRun = true)
+                    userRepository().count() == 0 -> UserSetupScreen(firstRun = true)
                     else -> LoginScreen()
                 })
                 toast("تمت استعادة النسخة الاحتياطية. سجّل الدخول مجدداً.")
