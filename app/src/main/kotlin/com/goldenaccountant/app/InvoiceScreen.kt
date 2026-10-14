@@ -13,7 +13,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class InvoiceScreen(private val kind: InvoiceKind) : Screen {
+class InvoiceScreen(val kind: InvoiceKind) : Screen {
     private val lines = ArrayList<DraftLine>()
 
     override fun build(a: MainActivity): View {

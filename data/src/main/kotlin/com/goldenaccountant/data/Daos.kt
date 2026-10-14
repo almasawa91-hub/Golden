@@ -173,3 +173,22 @@ interface AccountCategoryDao {
               WHERE l.categoryId = :categoryId ORDER BY a.name""")
     suspend fun accountsForCategory(categoryId: Long): List<AccountE>
 }
+
+
+@Dao
+interface UserDao {
+    @Insert suspend fun insert(user: AppUserE): Long
+    @Update suspend fun update(user: AppUserE)
+    @Query("SELECT * FROM app_users WHERE username = :username COLLATE NOCASE LIMIT 1") suspend fun byUsername(username: String): AppUserE?
+    @Query("SELECT * FROM app_users WHERE id = :id LIMIT 1") suspend fun byId(id: Long): AppUserE?
+    @Query("SELECT * FROM app_users ORDER BY createdAt, id") suspend fun all(): List<AppUserE>
+    @Query("SELECT COUNT(*) FROM app_users") suspend fun count(): Int
+    @Query("SELECT COUNT(*) FROM app_users WHERE role = 'ADMIN' AND active = 1") suspend fun activeAdminCount(): Int
+}
+
+@Dao
+interface AuditLogDao {
+    @Insert suspend fun insert(log: AuditLogE): Long
+    @Query("SELECT * FROM audit_logs ORDER BY createdAt DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun recent(limit: Int, offset: Int): List<AuditLogE>
+}

@@ -10,7 +10,7 @@ import com.goldenaccountant.data.InvoiceE
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
+class InvoiceListScreen(val kind: InvoiceKind) : Screen {
     override fun build(a: MainActivity): View {
         val sale = kind == InvoiceKind.SALE
         val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }

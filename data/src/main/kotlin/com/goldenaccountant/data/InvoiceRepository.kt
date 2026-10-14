@@ -85,6 +85,7 @@ class InvoiceRepository(private val db: AppDatabase) {
                 ),
             )
         }
+        db.logAudit("POST", "invoice", invoiceId, "ترحيل فاتورة $kind")
         invoiceId
     }
 
@@ -147,6 +148,7 @@ class InvoiceRepository(private val db: AppDatabase) {
                 reason = reason.trim().ifEmpty { "إلغاء الفاتورة" },
             ),
         )
+        db.logAudit("CANCEL", "invoice", invoiceId, "إلغاء فاتورة ${invoice.number}: ${reason.trim()}")
         reversalEntryId
     }
 

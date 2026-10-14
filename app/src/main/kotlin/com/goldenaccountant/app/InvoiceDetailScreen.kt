@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.util.Locale
 
-class InvoiceDetailScreen(private val invoiceId: Long, private val kind: InvoiceKind) : Screen {
+class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : Screen {
     override fun build(a: MainActivity): View {
         val root = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL

@@ -170,3 +170,28 @@ data class InvoiceCancellationE(
     val reason: String,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+
+@Entity(tableName = "app_users", indices = [Index(value = ["username"], unique = true)])
+data class AppUserE(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val username: String,
+    val displayName: String,
+    val passwordSalt: String,
+    val passwordHash: String,
+    val role: String,
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "audit_logs", indices = [Index("createdAt"), Index(value = ["entityType", "entityId"])])
+data class AuditLogE(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val action: String,
+    val entityType: String,
+    val entityId: Long? = null,
+    val details: String,
+    val actorUserId: Long? = null,
+    val actorName: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)

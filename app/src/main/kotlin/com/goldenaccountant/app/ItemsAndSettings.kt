@@ -68,10 +68,19 @@ class SettingsScreen : Screen {
             body.addView(sw)
         }
         body.addView(a.pill("بيانات المنشأة") { a.push(CompanySetupScreen(firstRun = false)) }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = a.dp(12) })
+        body.addView(a.text("المستخدم والصلاحيات", 16f, NAVY, true).apply { setPadding(0, a.dp(12), 0, a.dp(8)) })
+        body.addView(a.text("المستخدم الحالي: ${a.currentUser?.displayName ?: "—"} • ${a.currentUser?.role?.let { RolePolicy.label(it) } ?: ""}", 13f, MUTED))
+        if (a.can("admin")) {
+            body.addView(a.pill("إدارة المستخدمين") { a.push(UsersScreen()) }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(8) })
+            body.addView(a.pill("سجل التدقيق") { a.push(AuditScreen()) }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(8); bottomMargin = a.dp(8) })
+        }
+        body.addView(a.pill("تسجيل الخروج") { a.logout() }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(8); bottomMargin = a.dp(8) })
+        if (a.can("backup")) {
         body.addView(a.text("النسخ الاحتياطي", 16f, NAVY, true).apply { setPadding(0, a.dp(12), 0, a.dp(8)) })
         body.addView(a.text("صدّر نسخة كاملة من قاعدة البيانات أو استعد نسخة محفوظة. يفحص التطبيق سلامة الملف قبل الاستعادة.", 13f, MUTED))
         body.addView(a.pill("تصدير نسخة احتياطية") { a.chooseBackupDestination() }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(10) })
         body.addView(a.pill("استعادة نسخة احتياطية") { a.chooseBackupToRestore() }.apply { setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = a.dp(10); bottomMargin = a.dp(14) })
+        }
         toggle("تفعيل ضريبة القيمة المضافة", "vat_on")
         toggle("الضريبة متضمنة في السعر", "vat_inclusive")
         toggle("البيع بالكمية السالبة", "allow_negative")
@@ -114,7 +123,7 @@ class CompanySetupScreen(private val firstRun: Boolean) : Screen {
                         a.app.settings.put("company_currency", currency.text.toString().trim().uppercase())
                         a.app.settings.put("company_tax_number", taxNumber.text.toString().trim())
                         a.toast("تم حفظ بيانات المنشأة")
-                        if (firstRun) a.setRoot(HomeScreen()) else a.back()
+                        if (firstRun) a.push(UserSetupScreen(firstRun = true)) else a.back()
                     } catch (e: Exception) {
                         a.toast(e.message ?: "تعذر حفظ البيانات")
                     }

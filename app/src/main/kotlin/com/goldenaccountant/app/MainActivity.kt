@@ -21,6 +21,33 @@ class MainActivity : AppCompatActivity() {
     private val stack = ArrayList<Screen>()
     private lateinit var container: FrameLayout
     val app: App get() = application as App
+    val users: com.goldenaccountant.data.UserRepository get() = com.goldenaccountant.data.UserRepository(app.db)
+    var currentUser: com.goldenaccountant.data.AppUserE? = null
+        private set
+    fun setCurrentUser(user: com.goldenaccountant.data.AppUserE?) { currentUser = user }
+    fun can(permission: String): Boolean = RolePolicy.can(currentUser?.role, permission)
+
+    private fun requiredPermission(screen: Screen): String? = when (screen) {
+        is InvoiceListScreen -> if (screen.kind == com.goldenaccountant.core.accounting.InvoiceKind.SALE) "sales" else "purchases"
+        is InvoiceScreen -> if (screen.kind == com.goldenaccountant.core.accounting.InvoiceKind.SALE) "sales" else "purchases"
+        is InvoiceDetailScreen -> if (screen.kind == com.goldenaccountant.core.accounting.InvoiceKind.SALE) "sales" else "purchases"
+        is AccountsScreen, is StatementScreen, is StatementAccountPickerScreen, is ChartScreen, is AccountCategoriesScreen, is CategoryAccountsScreen -> "accounts"
+        is VouchersScreen, is VoucherScreen -> "vouchers"
+        is JournalScreen -> "journal"
+        is ItemsScreen, is StockAdjustmentScreen, is StockReportScreen -> "inventory"
+        is ReportsHubScreen, is TrialBalanceScreen, is IncomeScreen, is BalanceSheetScreen -> "reports"
+        is SettingsScreen -> "settings"
+        is UsersScreen, is AuditScreen -> "admin"
+        else -> null
+    }
+
+    fun logout() {
+        lifecycleScope.launch {
+            app.settings.put("session_username", "")
+            currentUser = null
+            setRoot(LoginScreen())
+        }
+    }
 
     private val backupLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -50,11 +77,28 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             AppDatabase.seed(app.db)
             val companyName = app.settings.get("company_name").trim()
-            setRoot(if (companyName.isEmpty()) CompanySetupScreen(firstRun = true) else HomeScreen())
+            setRoot(when {
+                companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
+                users.count() == 0 -> UserSetupScreen(firstRun = true)
+                else -> LoginScreen()
+            })
         }
     }
 
-    fun push(s: Screen) { stack += s; show() }
+    fun push(s: Screen) {
+        if (s !is LoginScreen && s !is UserSetupScreen && s !is CompanySetupScreen && currentUser == null) {
+            toast("سجّل الدخول أولاً")
+            setRoot(LoginScreen())
+            return
+        }
+        val permission = requiredPermission(s)
+        if (permission != null && !can(permission)) {
+            toast("ليس لديك صلاحية لتنفيذ هذه العملية")
+            return
+        }
+        stack += s
+        show()
+    }
     fun setRoot(s: Screen) { stack.clear(); stack += s; show() }
     fun refresh() = show()
     fun back() { if (stack.size > 1) { stack.removeAt(stack.size - 1); show() } }
@@ -82,10 +126,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun chooseBackupDestination() {
+        if (!can("backup")) return toast("لا تملك صلاحية النسخ الاحتياطي")
         backupLauncher.launch("Golden-backup-${today()}.db")
     }
 
     fun chooseBackupToRestore() {
+        if (!can("backup")) return toast("لا تملك صلاحية استعادة النسخ الاحتياطية")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("استعادة نسخة احتياطية")
             .setMessage("ستُستبدل البيانات الحالية ببيانات النسخة المختارة. يُنصح بتصدير نسخة حالية أولاً. هل تريد المتابعة؟")
@@ -137,9 +183,15 @@ class MainActivity : AppCompatActivity() {
                     }
                     app.replaceDatabase(incoming)
                 }
+                currentUser = null
+                app.settings.put("session_username", "")
                 val companyName = app.settings.get("company_name").trim()
-                setRoot(if (companyName.isEmpty()) CompanySetupScreen(firstRun = true) else HomeScreen())
-                toast("تم استعادة النسخة الاحتياطية بنجاح")
+                setRoot(when {
+                    companyName.isEmpty() -> CompanySetupScreen(firstRun = true)
+                    users.count() == 0 -> UserSetupScreen(firstRun = true)
+                    else -> LoginScreen()
+                })
+                toast("تمت استعادة النسخة الاحتياطية. سجّل الدخول مجدداً.")
             } catch (e: Exception) {
                 toast("فشلت الاستعادة: " + (e.message ?: "خطأ غير معروف"))
             } finally {
