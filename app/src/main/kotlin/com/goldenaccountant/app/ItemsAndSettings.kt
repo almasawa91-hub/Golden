@@ -40,13 +40,14 @@ class StockAdjustmentScreen : Screen {
         val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
         root.addView(a.header("تسوية المخزون", { a.back() }))
         val item = a.field("اسم الصنف المسجل")
+        val warehouse = a.field("اسم المستودع").apply { setText("المخزن الرئيسي") }
         val quantity = a.field("الكمية", true)
         val cost = a.field("تكلفة الوحدة", true)
         val date = a.field("التاريخ").apply { setText(today()) }
         val receive = Switch(a).apply { text = "توريد للمخزون (إلغاء التفعيل = صرف)"; isChecked = true }
         val form = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12)) }
         form.addView(a.text("تُسجّل التسوية كحركة مخزنية مستقلة. الصرف لا يسمح بتجاوز الكمية المتاحة.", 14f, MUTED))
-        listOf(item, quantity, cost, date, receive).forEach { form.addView(it) }
+        listOf(item, warehouse, quantity, cost, date, receive).forEach { form.addView(it) }
         form.addView(a.pill("حفظ التسوية") {
             val q = quantity.text.toString().num()
             val c = cost.text.toString().num() ?: BigDecimal.ZERO
@@ -57,7 +58,7 @@ class StockAdjustmentScreen : Screen {
             } else {
                 a.lifecycleScope.launch {
                     try {
-                        a.app.accounting.adjustStock(item.text.toString(), q, c, receive.isChecked, date.text.toString())
+                        a.app.accounting.adjustStock(item.text.toString(), q, c, receive.isChecked, date.text.toString(), warehouseName = warehouse.text.toString())
                         a.toast("تم حفظ تسوية المخزون")
                         a.back()
                     } catch (e: Exception) {

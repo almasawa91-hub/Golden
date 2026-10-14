@@ -116,27 +116,39 @@ class AccountingRepository(private val db: AppDatabase) {
     suspend fun stockSummary() = db.stock().stockByWarehouse()
     suspend fun items() = db.items().page(500, 0)
 
-    suspend fun adjustStock(itemName: String, quantity: BigDecimal, unitCost: BigDecimal, receive: Boolean, date: String, warehouseId: Long = 1): Long =
-        db.withTransaction {
-            requireValidAccountingDate(date)
-            require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
-            require(unitCost.signum() >= 0) { "التكلفة لا يمكن أن تكون سالبة" }
-            val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
-            val currentQty = db.stock().qtyMicro(item.id, warehouseId).fromMicro()
-            val currentAvg = (db.stock().lastMovementAtWarehouse(item.id, warehouseId)?.avgCostMicro ?: 0L).fromMicro()
-            val current = StockState(currentQty, currentAvg)
-            val next = if (receive) MovingAverage.receive(current, quantity, unitCost)
-                else MovingAverage.issue(current, quantity, allowNegative = false).first
-            val id = db.stock().insert(StockMovementE(
-                itemId = item.id, warehouseId = warehouseId, date = date,
-                kind = if (receive) "ADJUST_IN" else "ADJUST_OUT",
-                qtyMicro = (if (receive) quantity else quantity.negate()).toMicro(),
-                unitCostMicro = (if (receive) unitCost else currentAvg).toMicro(),
-                avgCostMicro = next.avgCost.toMicro(), refType = "adjustment", refId = null,
-            ))
-            db.logAudit("ADJUST", "stock", id, "${item.name}: ${if (receive) "توريد" else "صرف"} ${quantity.toPlainString()}")
-            id
-        }
+    suspend fun adjustStock(
+        itemName: String,
+        quantity: BigDecimal,
+        unitCost: BigDecimal,
+        receive: Boolean,
+        date: String,
+        warehouseId: Long = 1,
+        warehouseName: String? = null,
+    ): Long = db.withTransaction {
+        requireValidAccountingDate(date)
+        require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
+        require(unitCost.signum() >= 0) { "التكلفة لا يمكن أن تكون سالبة" }
+        val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
+        val targetWarehouseId = if (warehouseName.isNullOrBlank()) warehouseId else
+            (db.warehouses().byName(warehouseName.trim())?.id
+                ?: throw IllegalArgumentException("المستودع غير موجود: ${warehouseName.trim()}"))
+        val targetWarehouse = db.warehouses().all().firstOrNull { it.id == targetWarehouseId }
+            ?: throw IllegalArgumentException("المستودع غير موجود")
+        val currentQty = db.stock().qtyMicro(item.id, targetWarehouseId).fromMicro()
+        val currentAvg = (db.stock().lastMovementAtWarehouse(item.id, targetWarehouseId)?.avgCostMicro ?: 0L).fromMicro()
+        val current = StockState(currentQty, currentAvg)
+        val next = if (receive) MovingAverage.receive(current, quantity, unitCost)
+            else MovingAverage.issue(current, quantity, allowNegative = false).first
+        val id = db.stock().insert(StockMovementE(
+            itemId = item.id, warehouseId = targetWarehouseId, date = date,
+            kind = if (receive) "ADJUST_IN" else "ADJUST_OUT",
+            qtyMicro = (if (receive) quantity else quantity.negate()).toMicro(),
+            unitCostMicro = (if (receive) unitCost else currentAvg).toMicro(),
+            avgCostMicro = next.avgCost.toMicro(), refType = "adjustment", refId = null,
+        ))
+        db.logAudit("ADJUST", "stock", id, "${item.name} / ${targetWarehouse.name}: ${if (receive) "توريد" else "صرف"} ${quantity.toPlainString()}")
+        id
+    }
 
     suspend fun transferStock(
         itemName: String,
