@@ -86,6 +86,8 @@ interface StockDao {
 @Dao
 interface ItemDao {
     @Insert suspend fun insert(i: ItemE): Long
+    @Update suspend fun update(i: ItemE)
+    @Query("SELECT * FROM items WHERE id = :id LIMIT 1") suspend fun byId(id: Long): ItemE?
     @Query("SELECT * FROM items WHERE name = :n LIMIT 1") suspend fun byName(n: String): ItemE?
     @Query("SELECT * FROM items WHERE barcode = :code LIMIT 1") suspend fun byBarcode(code: String): ItemE?
     @Query("SELECT * FROM items ORDER BY name LIMIT :limit OFFSET :offset") suspend fun page(limit: Int, offset: Int): List<ItemE>

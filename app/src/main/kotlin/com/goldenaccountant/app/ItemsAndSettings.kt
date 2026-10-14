@@ -37,8 +37,34 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التص�
         "الصلاحية" to { a.push(ExpiryReportScreen()) },
         "نقص المخزون" to { a.push(LowStockReportScreen()) },
     )
-    override suspend fun load(a: MainActivity) = a.app.accounting.items().map {
-        Row(listOf(it.name, it.category, fmtMicro(it.salePriceMicro), it.barcode ?: "", it.expiryDate ?: "—"))
+    override suspend fun load(a: MainActivity) = a.app.accounting.items().map { item ->
+        Row(listOf(item.name, item.category, fmtMicro(item.salePriceMicro), item.barcode ?: "", item.expiryDate ?: "—")) {
+            a.ask(
+                "تعديل الصنف • ${item.name}",
+                listOf(
+                    "اسم الصنف", "سعر البيع", "الباركود (اختياري)", "التصنيف",
+                    "تاريخ الصلاحية YYYY-MM-DD (اختياري)", "ملاحظات", "حد إعادة الطلب",
+                ),
+                setOf(1, 6),
+            ) { v ->
+                a.lifecycleScope.launch {
+                    try {
+                        a.app.accounting.updateItem(
+                            item.id,
+                            v.getOrElse(0) { item.name },
+                            v.getOrElse(1) { fmtMicro(item.salePriceMicro) }.num() ?: item.salePriceMicro.let { java.math.BigDecimal.valueOf(it, 4) },
+                            v.getOrElse(2) { item.barcode.orEmpty() },
+                            v.getOrElse(3) { item.category },
+                            v.getOrElse(4) { item.expiryDate.orEmpty() },
+                            v.getOrElse(5) { item.notes },
+                            v.getOrElse(6) { fmtMicro(item.minStockMicro) }.num() ?: java.math.BigDecimal.valueOf(item.minStockMicro, 4),
+                        )
+                        a.toast("تم تحديث بيانات الصنف")
+                        a.refresh()
+                    } catch (e: Exception) { a.toast(e.message ?: "تعذر تعديل الصنف") }
+                }
+            }
+        }
     }
 }
 

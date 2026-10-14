@@ -225,6 +225,42 @@ class AccountingRepository(private val db: AppDatabase) {
         db.logAudit("CREATE", "item", id, "إضافة صنف: $n")
         return id
     }
+
+    suspend fun updateItem(
+        itemId: Long,
+        name: String,
+        salePrice: BigDecimal,
+        barcode: String?,
+        category: String,
+        expiryDate: String?,
+        notes: String,
+        minimumStock: BigDecimal,
+    ) = db.withTransaction {
+        val current = db.items().byId(itemId) ?: throw IllegalArgumentException("الصنف غير موجود")
+        val n = name.trim()
+        val normalizedBarcode = barcode?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedCategory = category.trim()
+        val normalizedExpiry = expiryDate?.trim()?.takeIf { it.isNotEmpty() }
+        require(n.isNotEmpty()) { "اسم الصنف مطلوب" }
+        require(salePrice.signum() >= 0) { "سعر البيع لا يمكن أن يكون سالباً" }
+        require(minimumStock.signum() >= 0) { "حد إعادة الطلب لا يمكن أن يكون سالباً" }
+        require(normalizedCategory.isNotEmpty()) { "تصنيف الصنف مطلوب" }
+        if (normalizedExpiry != null) requireValidAccountingDate(normalizedExpiry)
+        require(db.items().byName(n)?.let { it.id == itemId } != false) { "اسم الصنف مستخدم بالفعل" }
+        require(normalizedBarcode == null || db.items().byBarcode(normalizedBarcode)?.let { it.id == itemId } != false) {
+            "الباركود مستخدم لصنف آخر"
+        }
+        db.items().update(current.copy(
+            name = n,
+            barcode = normalizedBarcode,
+            salePriceMicro = salePrice.toMicro(),
+            minStockMicro = minimumStock.toMicro(),
+            category = normalizedCategory,
+            expiryDate = normalizedExpiry,
+            notes = notes.trim(),
+        ))
+        db.logAudit("UPDATE", "item", itemId, "تعديل بيانات الصنف: $n")
+    }
 }
 
 class SettingsRepository(private val db: AppDatabase) {
