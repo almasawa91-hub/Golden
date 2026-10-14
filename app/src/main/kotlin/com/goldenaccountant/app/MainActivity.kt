@@ -65,7 +65,7 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) {
                     snapshot.delete()
                     val safePath = snapshot.absolutePath.replace("'", "''")
-                    app.db.openHelper.writableDatabase.execSQL("VACUUM INTO '\u0024safePath'")
+                    app.db.openHelper.writableDatabase.execSQL("VACUUM INTO '$safePath'")
                     contentResolver.openOutputStream(destination, "w")?.use { output ->
                         snapshot.inputStream().use { input -> input.copyTo(output) }
                     } ?: throw IllegalStateException("تعذر فتح وجهة حفظ النسخة")
