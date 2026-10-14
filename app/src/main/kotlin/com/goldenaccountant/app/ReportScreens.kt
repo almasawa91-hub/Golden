@@ -43,6 +43,6 @@ class ReportsHubScreen : ListScreen("تقارير أخرى", listOf("التقر�
         "قائمة الدخل" to { a.push(IncomeScreen()) },
         "المركز المالي" to { a.push(BalanceSheetScreen()) },
         "المخزون المتبقي" to { a.push(StockReportScreen()) },
-        "حركة الصندوق" to { a.push(StatementScreen(-3)) },
+        "حركة الصندوق" to { a.push(StatementAccountPickerScreen()) },
     ).map { (n, c) -> Row(listOf(n), c) }
 }
