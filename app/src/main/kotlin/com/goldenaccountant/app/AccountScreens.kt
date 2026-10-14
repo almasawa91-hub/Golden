@@ -22,6 +22,14 @@ class AccountsScreen : ListScreen("الحسابات", listOf("الحساب", "ا
     }
 }
 
+
+class StatementAccountPickerScreen : ListScreen("اختيار حساب للكشف", listOf("الحساب", "النوع", "الرصيد")) {
+    override suspend fun load(a: MainActivity): List<Row> = a.app.accounting.balances().map { b ->
+        val type = ChartOfAccounts.groups.firstOrNull { it.id == b.account.groupId }?.name ?: ""
+        Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
+    }
+}
+
 class StatementScreen(private val accountId: Long) : ListScreen("كشف حساب", listOf("التاريخ", "البيان", "مدين", "دائن", "الرصيد")) {
     override suspend fun load(a: MainActivity) = a.app.accounting.statement(accountId).rows.map {
         Row(listOf(it.date, it.memo, fmt(it.debit), fmt(it.credit), fmt(it.balance)))
