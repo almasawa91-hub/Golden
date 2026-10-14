@@ -30,6 +30,16 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) importBackup(uri) }
 
+    private data class PdfPayload(val title: String, val columns: List<String>, val rows: List<List<String>>)
+    private var pendingPdf: PdfPayload? = null
+    private val pdfLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        val payload = pendingPdf
+        pendingPdf = null
+        if (uri != null && payload != null) exportReportPdf(uri, payload)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         container = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -49,6 +59,27 @@ class MainActivity : AppCompatActivity() {
     fun refresh() = show()
     fun back() { if (stack.size > 1) { stack.removeAt(stack.size - 1); show() } }
     private fun show() { container.removeAllViews(); container.addView(stack.last().build(this)) }
+
+    fun requestReportPdf(title: String, columns: List<String>, rows: List<List<String>>) {
+        pendingPdf = PdfPayload(title, columns.toList(), rows.map { it.toList() })
+        val safeTitle = title.replace(" ", "-").replace("/", "-").replace("\\", "-")
+        pdfLauncher.launch("Golden-report-$safeTitle-${today()}.pdf")
+    }
+
+    private fun exportReportPdf(destination: Uri, payload: PdfPayload) {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(destination, "w")?.use { output ->
+                        ReportPdf.write(output, payload.title, payload.columns, payload.rows)
+                    } ?: throw IllegalStateException("تعذر فتح ملف PDF للحفظ")
+                }
+                toast("تم تصدير التقرير بصيغة PDF")
+            } catch (e: Exception) {
+                toast("تعذر تصدير PDF: " + (e.message ?: "خطأ غير معروف"))
+            }
+        }
+    }
 
     fun chooseBackupDestination() {
         backupLauncher.launch("Golden-backup-${today()}.db")
