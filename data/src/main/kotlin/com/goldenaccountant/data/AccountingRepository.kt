@@ -7,9 +7,17 @@ import com.goldenaccountant.core.inventory.MovingAverage
 import com.goldenaccountant.core.inventory.StockState
 import com.goldenaccountant.core.report.*
 import java.math.BigDecimal
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 const val FROM_ALL = "0000-01-01"
 const val TO_ALL = "9999-12-31"
+
+internal fun requireValidAccountingDate(date: String) {
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+    val parsed = try { formatter.parse(date) } catch (_: Exception) { null }
+    require(parsed != null && formatter.format(parsed) == date) { "التاريخ غير صالح؛ استخدم YYYY-MM-DD" }
+}
 
 data class AccountBalance(val account: AccountE, val balance: BigDecimal)
 data class StatementResult(val rows: List<StatementRow>, val accountName: String)
@@ -33,6 +41,7 @@ class AccountingRepository(private val db: AppDatabase) {
     /** سند قبض (مدين الصندوق) أو صرف (دائن الصندوق) بقيد متوازن. */
     suspend fun voucher(receipt: Boolean, accountName: String, amount: BigDecimal, date: String, memo: String, rate: BigDecimal = BigDecimal.ONE): Long =
         db.withTransaction {
+            requireValidAccountingDate(date)
             require(amount.signum() > 0) { "المبلغ يجب أن يكون أكبر من صفر" }
             val acc = accountId(accountName)
             val m = (amount * rate).r()
@@ -46,6 +55,15 @@ class AccountingRepository(private val db: AppDatabase) {
     /** قيد يدوي: يُرفض إذا لم يتوازن. */
     suspend fun journal(date: String, memo: String, lines: List<Triple<String, BigDecimal, BigDecimal>>, opening: Boolean = false): Long =
         db.withTransaction {
+            requireValidAccountingDate(date)
+            require(lines.size >= 2) { "القيد يحتاج سطرين على الأقل" }
+            require(lines.all { (_, debit, credit) ->
+                debit.signum() >= 0 && credit.signum() >= 0 &&
+                    ((debit.signum() > 0) xor (credit.signum() > 0))
+            }) { "كل سطر يجب أن يحتوي مبلغاً موجباً في المدين أو الدائن فقط" }
+            val debitTotal = lines.fold(BigDecimal.ZERO) { total, line -> total + line.second }
+            val creditTotal = lines.fold(BigDecimal.ZERO) { total, line -> total + line.third }
+            require(debitTotal.compareTo(creditTotal) == 0) { "القيد غير متوازن: مجموع المدين لا يساوي مجموع الدائن" }
             val entry = JournalEntry(date, memo, lines.map { (n, d, c) -> JournalLine(accountId(n), d, c) })
             val id = db.journal().post(entry, if (opening) "opening" else "journal", null)
             db.logAudit("POST", if (opening) "opening" else "journal", id, memo)
@@ -100,6 +118,7 @@ class AccountingRepository(private val db: AppDatabase) {
 
     suspend fun adjustStock(itemName: String, quantity: BigDecimal, unitCost: BigDecimal, receive: Boolean, date: String, warehouseId: Long = 1): Long =
         db.withTransaction {
+            requireValidAccountingDate(date)
             require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
             require(unitCost.signum() >= 0) { "التكلفة لا يمكن أن تكون سالبة" }
             val item = db.items().byName(itemName.trim()) ?: throw IllegalArgumentException("الصنف غير موجود")
@@ -127,6 +146,7 @@ class AccountingRepository(private val db: AppDatabase) {
         date: String,
         memo: String = "",
     ): Long = db.withTransaction {
+        requireValidAccountingDate(date)
         require(quantity.signum() > 0) { "الكمية يجب أن تكون أكبر من صفر" }
         require(fromWarehouseName.trim().isNotEmpty() && toWarehouseName.trim().isNotEmpty()) { "اختر المستودعين" }
         require(!fromWarehouseName.trim().equals(toWarehouseName.trim(), ignoreCase = true)) { "مستودع المصدر والوجهة يجب أن يختلفا" }

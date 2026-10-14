@@ -38,6 +38,9 @@ class InvoiceRepository(private val db: AppDatabase) {
 
     /** ينشئ الطرف والأصناف عند الحاجة ثم يرحّل الفاتورة والقيد وحركات المخزون في Transaction واحدة. */
     suspend fun post(d: InvoiceDraft): Long = db.withTransaction {
+        requireValidAccountingDate(d.date)
+        require(d.lines.isNotEmpty()) { "أضف صنفاً واحداً على الأقل" }
+        require(d.discount.signum() >= 0 && d.fees.signum() >= 0 && d.paid.signum() >= 0) { "الخصم والرسوم والمدفوع لا يمكن أن تكون سالبة" }
         val sale = d.kind == InvoiceKind.SALE
         val partyName = d.partyName.trim().ifEmpty { if (sale) "عميل نقدي" else "مورد نقدي" }
         val party = db.accounts().byName(partyName)
@@ -95,6 +98,8 @@ class InvoiceRepository(private val db: AppDatabase) {
      * لا تُحذف الفاتورة أو القيد الأصلي؛ ويُرفض الإلغاء إن تعذر عكس الكمية بأمان.
      */
     suspend fun cancelInvoice(invoiceId: Long, date: String, reason: String): Long = db.withTransaction {
+        requireValidAccountingDate(date)
+        require(reason.isNotBlank()) { "سبب الإلغاء مطلوب" }
         val invoice = db.invoices().byId(invoiceId) ?: throw IllegalArgumentException("الفاتورة غير موجودة")
         require(db.invoiceCancellations().byInvoiceId(invoiceId) == null) { "الفاتورة ملغاة مسبقاً" }
         val originalEntry = db.journal().entryByRef("invoice", invoiceId)
