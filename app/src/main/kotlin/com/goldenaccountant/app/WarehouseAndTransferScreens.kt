@@ -5,6 +5,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import com.goldenaccountant.core.accounting.fromMicro
 import com.goldenaccountant.data.logAudit
 
 class WarehousesScreen : ListScreen("إدارة المستودعات", listOf("المستودع", "رقم المستودع")) {
@@ -25,6 +26,8 @@ class WarehousesScreen : ListScreen("إدارة المستودعات", listOf("�
             }
         },
         "⇄" to { a.push(StockTransferScreen()) },
+        "السجل" to { a.push(StockTransferHistoryScreen()) },
+        "الرصيد" to { a.push(WarehouseStockScreen()) },
     )
 
     override suspend fun load(a: MainActivity): List<Row> =
@@ -61,4 +64,30 @@ class StockTransferScreen : Screen {
         root.addView(ScrollView(a).apply { addView(form) }, LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
+}
+
+
+class StockTransferHistoryScreen : ListScreen(
+    "سجل التحويلات المخزنية",
+    listOf("التاريخ", "الصنف", "من مستودع", "إلى مستودع", "الكمية", "التكلفة", "ملاحظة")
+) {
+    override suspend fun load(a: MainActivity): List<Row> =
+        a.app.db.stockTransfers().all().map { transfer ->
+            Row(listOf(
+                transfer.date, transfer.itemName, transfer.fromWarehouseName, transfer.toWarehouseName,
+                fmt(transfer.qtyMicro.fromMicro()), fmt(transfer.unitCostMicro.fromMicro()), transfer.memo,
+            ))
+        }
+}
+
+class WarehouseStockScreen : ListScreen(
+    "الرصيد حسب المستودع",
+    listOf("المستودع", "الصنف", "الكمية", "متوسط التكلفة", "القيمة")
+) {
+    override suspend fun load(a: MainActivity): List<Row> =
+        a.app.db.stock().stockByWarehouse().map { stock ->
+            val qty = stock.qtyMicro.fromMicro()
+            val average = (stock.avgMicro ?: 0L).fromMicro()
+            Row(listOf(stock.warehouseName, stock.itemName, fmt(qty), fmt(average), fmt(qty * average)))
+        }
 }

@@ -72,6 +72,15 @@ interface StockDao {
     suspend fun lastMovementAtWarehouse(item: Long, wh: Long): StockMovementE?
     @Query("SELECT * FROM stock_movements WHERE refType = :refType AND refId = :refId ORDER BY id DESC")
     suspend fun byRef(refType: String, refId: Long): List<StockMovementE>
+    @Query("""SELECT w.name AS warehouseName, i.name AS itemName,
+        COALESCE(SUM(m.qtyMicro), 0) AS qtyMicro,
+        (SELECT mm.avgCostMicro FROM stock_movements mm WHERE mm.itemId = i.id AND mm.warehouseId = w.id ORDER BY mm.id DESC LIMIT 1) AS avgMicro
+        FROM warehouses w CROSS JOIN items i
+        LEFT JOIN stock_movements m ON m.warehouseId = w.id AND m.itemId = i.id
+        GROUP BY w.id, i.id
+        HAVING COALESCE(SUM(m.qtyMicro), 0) != 0
+        ORDER BY w.name, i.name""")
+    suspend fun stockByWarehouse(): List<WarehouseStockRow>
 }
 
 @Dao
@@ -222,4 +231,12 @@ data class StockTransferRow(
     val itemName: String,
     val fromWarehouseName: String,
     val toWarehouseName: String,
+)
+
+
+data class WarehouseStockRow(
+    val warehouseName: String,
+    val itemName: String,
+    val qtyMicro: Long,
+    val avgMicro: Long?,
 )
