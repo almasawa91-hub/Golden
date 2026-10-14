@@ -181,11 +181,32 @@ class AccountingRepository(private val db: AppDatabase) {
         transferId
     }
 
-    suspend fun addItem(name: String, salePrice: BigDecimal, barcode: String?): Long {
+    suspend fun addItem(
+        name: String,
+        salePrice: BigDecimal,
+        barcode: String?,
+        category: String = "عام",
+        expiryDate: String? = null,
+        notes: String = "",
+    ): Long {
         val n = name.trim()
+        val normalizedBarcode = barcode?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedCategory = category.trim()
+        val normalizedExpiry = expiryDate?.trim()?.takeIf { it.isNotEmpty() }
         require(n.isNotEmpty()) { "اسم الصنف مطلوب" }
+        require(salePrice.signum() >= 0) { "سعر البيع لا يمكن أن يكون سالباً" }
+        require(normalizedCategory.isNotEmpty()) { "تصنيف الصنف مطلوب" }
+        if (normalizedExpiry != null) requireValidAccountingDate(normalizedExpiry)
         require(db.items().byName(n) == null) { "الصنف موجود مسبقا" }
-        val id = db.items().insert(ItemE(name = n, barcode = barcode?.ifBlank { null }, salePriceMicro = salePrice.toMicro()))
+        if (normalizedBarcode != null) require(db.items().byBarcode(normalizedBarcode) == null) { "الباركود مستخدم لصنف آخر" }
+        val id = db.items().insert(ItemE(
+            name = n,
+            barcode = normalizedBarcode,
+            salePriceMicro = salePrice.toMicro(),
+            category = normalizedCategory,
+            expiryDate = normalizedExpiry,
+            notes = notes.trim(),
+        ))
         db.logAudit("CREATE", "item", id, "إضافة صنف: $n")
         return id
     }

@@ -6,11 +6,22 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
-class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "سعر البيع", "الباركود"), { a ->
-    a.ask("صنف جديد", listOf("اسم الصنف", "سعر البيع", "الباركود"), setOf(1)) { v ->
+class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التصنيف", "سعر البيع", "الباركود", "الصلاحية"), { a ->
+    a.ask("صنف جديد", listOf(
+        "اسم الصنف", "سعر البيع", "الباركود (اختياري)", "التصنيف", "تاريخ الصلاحية YYYY-MM-DD (اختياري)", "ملاحظات",
+    ), setOf(1)) { v ->
         a.lifecycleScope.launch {
-            try { a.app.accounting.addItem(v[0], v[1].num() ?: BigDecimal.ZERO, v[2]); a.refresh() }
-            catch (e: Exception) { a.toast(e.message ?: "تعذر الحفظ") }
+            try {
+                a.app.accounting.addItem(
+                    v.getOrElse(0) { "" },
+                    v.getOrElse(1) { "" }.num() ?: BigDecimal.ZERO,
+                    v.getOrElse(2) { "" },
+                    v.getOrElse(3) { "عام" }.ifBlank { "عام" },
+                    v.getOrElse(4) { "" },
+                    v.getOrElse(5) { "" },
+                )
+                a.refresh()
+            } catch (e: Exception) { a.toast(e.message ?: "تعذر الحفظ") }
         }
     }
 }) {
@@ -19,7 +30,9 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "سعر ا
         "المستودعات" to { a.push(WarehousesScreen()) },
         "⇄" to { a.push(StockTransferScreen()) },
     )
-    override suspend fun load(a: MainActivity) = a.app.accounting.items().map { Row(listOf(it.name, fmtMicro(it.salePriceMicro), it.barcode ?: "")) }
+    override suspend fun load(a: MainActivity) = a.app.accounting.items().map {
+        Row(listOf(it.name, it.category, fmtMicro(it.salePriceMicro), it.barcode ?: "", it.expiryDate ?: "—"))
+    }
 }
 
 class StockAdjustmentScreen : Screen {

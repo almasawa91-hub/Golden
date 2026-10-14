@@ -60,6 +60,9 @@ data class ItemE(
     val unit: String = "حبة",
     val salePriceMicro: Long = 0,
     val minStockMicro: Long = 0,
+    @ColumnInfo(defaultValue = "'عام'") val category: String = "عام",
+    @ColumnInfo(defaultValue = "NULL") val expiryDate: String? = null,
+    @ColumnInfo(defaultValue = "''") val notes: String = "",
 )
 
 /** حركة مخزنية: الكمية موجبة للتوريد وسالبة للصرف. avgCostMicro = متوسط التكلفة بعد الحركة. */

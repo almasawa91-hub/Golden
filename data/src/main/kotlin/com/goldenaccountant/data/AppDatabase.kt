@@ -16,7 +16,7 @@ import com.goldenaccountant.core.chart.ChartOfAccounts
         SettingE::class, InvoiceE::class, InvoiceLineE::class,
         AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class, AppUserE::class, AuditLogE::class, StockTransferE::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -125,8 +125,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN category TEXT NOT NULL DEFAULT 'عام'")
+                db.execSQL("ALTER TABLE items ADD COLUMN expiryDate TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE items ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun build(ctx: Context): AppDatabase = Room.databaseBuilder(ctx, AppDatabase::class.java, "golden.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
 
         /** تهيئة دليل الحسابات والمخزن والتصنيفات النظامية من دون استبدال بيانات المستخدم. */
