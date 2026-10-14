@@ -44,6 +44,12 @@ abstract class JournalDao {
     @Query("SELECT * FROM journal_entries WHERE refType = :t ORDER BY id DESC LIMIT :limit OFFSET :offset")
     abstract suspend fun entriesByRef(t: String, limit: Int, offset: Int): List<JournalEntryE>
 
+    @Query("SELECT * FROM journal_entries WHERE refType = :refType AND refId = :refId ORDER BY id DESC LIMIT 1")
+    abstract suspend fun entryByRef(refType: String, refId: Long): JournalEntryE?
+
+    @Query("SELECT * FROM journal_lines WHERE entryId = :entryId ORDER BY id")
+    abstract suspend fun linesForEntry(entryId: Long): List<JournalLineE>
+
     @Query("SELECT COALESCE(SUM(debitMicro),0) FROM journal_lines WHERE entryId = :id")
     abstract suspend fun entryTotalMicro(id: Long): Long
 
@@ -62,6 +68,8 @@ interface StockDao {
     @Query("SELECT i.name AS name, COALESCE(SUM(m.qtyMicro),0) AS qtyMicro, (SELECT avgCostMicro FROM stock_movements WHERE itemId = i.id ORDER BY id DESC LIMIT 1) AS avgMicro FROM items i LEFT JOIN stock_movements m ON m.itemId = i.id GROUP BY i.id ORDER BY i.name")
     suspend fun stockSummary(): List<StockRow>
     @Query("SELECT avgCostMicro FROM stock_movements WHERE itemId=:item ORDER BY id DESC LIMIT 1") suspend fun lastAvgCostMicro(item: Long): Long?
+    @Query("SELECT * FROM stock_movements WHERE refType = :refType AND refId = :refId ORDER BY id DESC")
+    suspend fun byRef(refType: String, refId: Long): List<StockMovementE>
 }
 
 @Dao
@@ -90,7 +98,26 @@ interface InvoiceDao {
     @Insert suspend fun insertLines(l: List<InvoiceLineE>)
     @Query("SELECT COUNT(*) FROM invoices WHERE kind = :k") suspend fun count(k: String): Int
     @Query("SELECT * FROM invoices WHERE kind = :k ORDER BY id DESC LIMIT :limit OFFSET :offset") suspend fun page(k: String, limit: Int, offset: Int): List<InvoiceE>
+    @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1") suspend fun byId(id: Long): InvoiceE?
+    @Query("""SELECT l.itemId AS itemId, i.name AS itemName, l.qtyMicro AS qtyMicro, l.priceMicro AS priceMicro
+              FROM invoice_lines l JOIN items i ON i.id = l.itemId
+              WHERE l.invoiceId = :invoiceId ORDER BY l.id""")
+    suspend fun linesForInvoice(invoiceId: Long): List<InvoiceLineDetailRow>
     @Query("SELECT COALESCE(SUM(totalMicro),0) FROM invoices WHERE kind = :k AND date = :date AND isReturn = 0") suspend fun totalForDay(k: String, date: String): Long
+}
+
+data class InvoiceLineDetailRow(val itemId: Long, val itemName: String, val qtyMicro: Long, val priceMicro: Long)
+
+@Dao
+interface InvoiceCancellationDao {
+    @Insert
+    suspend fun insert(cancellation: InvoiceCancellationE)
+
+    @Query("SELECT * FROM invoice_cancellations WHERE invoiceId = :invoiceId LIMIT 1")
+    suspend fun byInvoiceId(invoiceId: Long): InvoiceCancellationE?
+
+    @Query("SELECT * FROM invoice_cancellations ORDER BY createdAt DESC")
+    suspend fun all(): List<InvoiceCancellationE>
 }
 
 data class NetRow(val accountId: Long, val netMicro: Long)

@@ -3,6 +3,7 @@ package com.goldenaccountant.data
 import androidx.room.withTransaction
 import com.goldenaccountant.core.accounting.*
 import com.goldenaccountant.core.inventory.StockState
+import com.goldenaccountant.core.inventory.MovingAverage
 import com.goldenaccountant.core.invoice.*
 import java.math.BigDecimal
 
@@ -85,6 +86,68 @@ class InvoiceRepository(private val db: AppDatabase) {
             )
         }
         invoiceId
+    }
+
+
+    /**
+     * إلغاء فاتورة بقيد عكسي وحركات مخزون عكسية داخل معاملة واحدة.
+     * لا تُحذف الفاتورة أو القيد الأصلي؛ ويُرفض الإلغاء إن تعذر عكس الكمية بأمان.
+     */
+    suspend fun cancelInvoice(invoiceId: Long, date: String, reason: String): Long = db.withTransaction {
+        val invoice = db.invoices().byId(invoiceId) ?: throw IllegalArgumentException("الفاتورة غير موجودة")
+        require(db.invoiceCancellations().byInvoiceId(invoiceId) == null) { "الفاتورة ملغاة مسبقاً" }
+        val originalEntry = db.journal().entryByRef("invoice", invoiceId)
+            ?: throw IllegalStateException("لم يُعثر على القيد الأصلي للفاتورة")
+        val originalLines = db.journal().linesForEntry(originalEntry.id)
+        require(originalLines.isNotEmpty()) { "القيد الأصلي لا يحتوي على أسطر" }
+        val reversedEntry = JournalEntry(
+            date = date,
+            memo = "عكس فاتورة رقم ${invoice.number}: " + reason.trim().ifEmpty { "إلغاء الفاتورة" },
+            lines = originalLines.map { line ->
+                JournalLine(
+                    accountId = line.accountId,
+                    debit = line.creditMicro.fromMicro(),
+                    credit = line.debitMicro.fromMicro(),
+                )
+            },
+        )
+        val reversalEntryId = db.journal().post(reversedEntry, "invoice_reversal", invoiceId)
+
+        val movements = db.stock().byRef("invoice", invoiceId)
+        for (movement in movements) {
+            val originalQty = movement.qtyMicro.fromMicro()
+            if (originalQty.signum() == 0) continue
+            val currentQty = db.stock().qtyMicro(movement.itemId, movement.warehouseId).fromMicro()
+            val currentAverage = (db.stock().lastAvgCostMicro(movement.itemId) ?: 0L).fromMicro()
+            val current = StockState(currentQty, currentAverage)
+            val next = if (originalQty.signum() > 0) {
+                MovingAverage.issue(current, originalQty, allowNegative = false).first
+            } else {
+                MovingAverage.receive(current, originalQty.negate(), movement.unitCostMicro.fromMicro())
+            }
+            db.stock().insert(
+                StockMovementE(
+                    itemId = movement.itemId,
+                    warehouseId = movement.warehouseId,
+                    date = date,
+                    kind = if (originalQty.signum() > 0) "CANCEL_OUT" else "CANCEL_IN",
+                    qtyMicro = -movement.qtyMicro,
+                    unitCostMicro = movement.unitCostMicro,
+                    avgCostMicro = next.avgCost.toMicro(),
+                    refType = "invoice_reversal",
+                    refId = invoiceId,
+                ),
+            )
+        }
+        db.invoiceCancellations().insert(
+            InvoiceCancellationE(
+                invoiceId = invoiceId,
+                reversedEntryId = reversalEntryId,
+                date = date,
+                reason = reason.trim().ifEmpty { "إلغاء الفاتورة" },
+            ),
+        )
+        reversalEntryId
     }
 
     private fun DraftLineE(invoiceId: Long, itemId: Long, l: DraftLine) =

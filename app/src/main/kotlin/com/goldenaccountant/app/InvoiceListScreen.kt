@@ -14,7 +14,18 @@ class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
     override fun build(a: MainActivity): View {
         val sale = kind == InvoiceKind.SALE
         val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
-        root.addView(a.header(if (sale) "قائمة المبيعات" else "قائمة المشتريات", { a.back() }))
+        val screenTitle = if (sale) "قائمة المبيعات" else "قائمة المشتريات"
+        root.addView(a.header(screenTitle, { a.back() }, "PDF" to {
+            a.lifecycleScope.launch {
+                try {
+                    val all = a.app.db.invoices().page(kind.name, 500, 0)
+                    val cancelled = a.app.db.invoiceCancellations().all().map { it.invoiceId }.toSet()
+                    a.requestReportPdf(screenTitle, listOf("رقم", "التاريخ", "الاسم", "المبلغ", "الحالة"), all.map { invoice ->
+                        listOf(invoice.number.toString(), invoice.date, invoice.partyName, String.format(Locale.US, "%,.2f", invoice.totalMicro.fromMicro()), if (invoice.id in cancelled) "ملغاة" else if (invoice.isReturn) "مرتجع" else "نشطة")
+                    })
+                } catch (e: Exception) { a.toast(e.message ?: "تعذر تصدير التقرير") }
+            }
+        }))
 
         val search = a.field("بحث بالرقم أو الطرف أو التاريخ أو البيان").apply {
             isSingleLine = true
@@ -38,6 +49,7 @@ class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
         a.lifecycleScope.launch {
             try {
                 val invoices = a.app.db.invoices().page(kind.name, 500, 0)
+                val cancelledIds = a.app.db.invoiceCancellations().all().map { it.invoiceId }.toSet()
                 fun render(query: String) {
                     val filtered = invoices.filter {
                         query.isBlank() ||
@@ -45,7 +57,8 @@ class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
                             it.partyName.contains(query, true) ||
                             it.date.contains(query, true) ||
                             it.memo.contains(query, true) ||
-                            (if (it.isReturn) "مرتجع" else "").contains(query, true)
+                            (if (it.isReturn) "مرتجع" else "").contains(query, true) ||
+                            (if (it.id in cancelledIds) "ملغاة" else "نشطة").contains(query, true)
                     }
                     list.removeAllViews()
                     if (filtered.isEmpty()) {
@@ -58,9 +71,11 @@ class InvoiceListScreen(private val kind: InvoiceKind) : Screen {
                             list.addView(a.rowOf(
                                 i.number.toString(),
                                 i.date,
-                                i.partyName + if (i.isReturn) " (مرتجع)" else "",
+                                i.partyName + (if (i.isReturn) " (مرتجع)" else "") + (if (i.id in cancelledIds) " (ملغاة)" else ""),
                                 String.format(Locale.US, "%,.2f", i.totalMicro.fromMicro())
-                            ))
+                            ).apply {
+                                setOnClickListener { a.push(InvoiceDetailScreen(i.id, kind)) }
+                            })
                         }
                     }
                 }

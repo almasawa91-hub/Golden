@@ -153,3 +153,20 @@ data class AccountCategoryLinkE(
     val accountId: Long,
     val categoryId: Long,
 )
+
+
+@Entity(
+    tableName = "invoice_cancellations",
+    foreignKeys = [
+        ForeignKey(InvoiceE::class, ["id"], ["invoiceId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(JournalEntryE::class, ["id"], ["reversedEntryId"], onDelete = ForeignKey.RESTRICT),
+    ],
+    indices = [Index("reversedEntryId")],
+)
+data class InvoiceCancellationE(
+    @PrimaryKey val invoiceId: Long,
+    val reversedEntryId: Long,
+    val date: String,
+    val reason: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)

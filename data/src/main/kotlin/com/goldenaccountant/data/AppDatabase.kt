@@ -14,9 +14,9 @@ import com.goldenaccountant.core.chart.ChartOfAccounts
         AccountGroupE::class, AccountE::class, JournalEntryE::class, JournalLineE::class,
         WarehouseE::class, ItemE::class, StockMovementE::class, CurrencyE::class,
         SettingE::class, InvoiceE::class, InvoiceLineE::class,
-        AccountCategoryE::class, AccountCategoryLinkE::class,
+        AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,6 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun settings(): SettingDao
     abstract fun warehouses(): WarehouseDao
     abstract fun invoices(): InvoiceDao
+    abstract fun invoiceCancellations(): InvoiceCancellationDao
     abstract fun accountCategories(): AccountCategoryDao
 
     companion object {
@@ -55,8 +56,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS invoice_cancellations (
+                    invoiceId INTEGER NOT NULL PRIMARY KEY,
+                    reversedEntryId INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    FOREIGN KEY(invoiceId) REFERENCES invoices(id) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                    FOREIGN KEY(reversedEntryId) REFERENCES journal_entries(id) ON UPDATE NO ACTION ON DELETE RESTRICT
+                )""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_invoice_cancellations_reversedEntryId ON invoice_cancellations(reversedEntryId)")
+            }
+        }
+
         fun build(ctx: Context): AppDatabase = Room.databaseBuilder(ctx, AppDatabase::class.java, "golden.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
         /** تهيئة دليل الحسابات والمخزن والتصنيفات النظامية من دون استبدال بيانات المستخدم. */
