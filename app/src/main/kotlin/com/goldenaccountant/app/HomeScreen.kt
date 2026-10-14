@@ -5,6 +5,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import com.goldenaccountant.core.accounting.InvoiceKind
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class HomeScreen: Screen {
  private var drawerOpen=false
@@ -25,7 +27,21 @@ class HomeScreen: Screen {
   val body=LinearLayout(a).apply{orientation=LinearLayout.VERTICAL;setPadding(a.dp(14),a.dp(14),a.dp(14),a.dp(18))}
   body.addView(a.text("لوحة التحكم",20f,NAVY,true).apply{setPadding(a.dp(4),a.dp(4),0,a.dp(12))})
   val summary=GridLayout(a).apply{columnCount=2}
-  listOf("المبيعات اليوم" to "0.00","المشتريات اليوم" to "0.00","الذمم المدينة" to "0.00","قيمة المخزون" to "0.00").forEach{(t,v)->summary.addView(a.card(t,v),GridLayout.LayoutParams().apply{width=0;columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);setMargins(a.dp(5),a.dp(5),a.dp(5),a.dp(5))})}
+  val summaryValues = ArrayList<TextView>()
+  listOf("المبيعات اليوم","المشتريات اليوم","الذمم المدينة","قيمة المخزون").forEach{t->
+   val card = a.card(t,"…")
+   summaryValues.add(card.getChildAt(1) as TextView)
+   summary.addView(card,GridLayout.LayoutParams().apply{width=0;columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);setMargins(a.dp(5),a.dp(5),a.dp(5),a.dp(5))})
+  }
+  a.lifecycleScope.launch {
+   try {
+    val s = a.app.accounting.dashboardSummary()
+    listOf(s.salesToday,s.purchasesToday,s.receivables,s.stockValue).forEachIndexed { i,v -> summaryValues[i].text = fmt(v) }
+   } catch (_: Exception) {
+    summaryValues.forEach { it.text = "—" }
+    a.toast("تعذر تحديث ملخص لوحة التحكم")
+   }
+  }
   body.addView(summary)
   body.addView(a.text("العمليات السريعة",17f,NAVY,true).apply{setPadding(a.dp(4),a.dp(20),0,a.dp(10))})
   val actions=GridLayout(a).apply{columnCount=2}
