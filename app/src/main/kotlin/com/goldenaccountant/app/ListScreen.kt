@@ -20,7 +20,18 @@ abstract class ListScreen(
 
     override fun build(a: MainActivity): View {
         val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(a.header(title, { a.back() }, *actions(a).toTypedArray()))
+        val headerActions = actions(a).toMutableList()
+        headerActions.add("PDF" to {
+            a.lifecycleScope.launch {
+                try {
+                    val exportRows = load(a)
+                    a.requestReportPdf(title, cols, exportRows.map { it.cells })
+                } catch (e: Exception) {
+                    a.toast("تعذر تجهيز التقرير: " + (e.message ?: "خطأ غير معروف"))
+                }
+            }
+        })
+        root.addView(a.header(title, { a.back() }, *headerActions.toTypedArray()))
 
         val search = a.field("بحث في $title").apply {
             isSingleLine = true
