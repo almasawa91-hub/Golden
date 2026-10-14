@@ -65,6 +65,7 @@ abstract class JournalDao {
 interface StockDao {
     @Insert suspend fun insert(m: StockMovementE): Long
     @Query("SELECT COALESCE(SUM(qtyMicro),0) FROM stock_movements WHERE itemId=:item AND warehouseId=:wh") suspend fun qtyMicro(item: Long, wh: Long): Long
+    @Query("SELECT MAX(date) FROM stock_movements WHERE itemId=:item AND warehouseId=:wh") suspend fun latestMovementDate(item: Long, wh: Long): String?
     @Query("SELECT i.name AS name, COALESCE(SUM(m.qtyMicro),0) AS qtyMicro, (SELECT avgCostMicro FROM stock_movements WHERE itemId = i.id ORDER BY id DESC LIMIT 1) AS avgMicro FROM items i LEFT JOIN stock_movements m ON m.itemId = i.id GROUP BY i.id ORDER BY i.name")
     suspend fun stockSummary(): List<StockRow>
     @Query("SELECT avgCostMicro FROM stock_movements WHERE itemId=:item ORDER BY id DESC LIMIT 1") suspend fun lastAvgCostMicro(item: Long): Long?

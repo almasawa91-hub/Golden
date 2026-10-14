@@ -134,6 +134,10 @@ class AccountingRepository(private val db: AppDatabase) {
                 ?: throw IllegalArgumentException("المستودع غير موجود: ${warehouseName.trim()}"))
         val targetWarehouse = db.warehouses().all().firstOrNull { it.id == targetWarehouseId }
             ?: throw IllegalArgumentException("المستودع غير موجود")
+        val latestDate = db.stock().latestMovementDate(item.id, targetWarehouseId)
+        require(latestDate == null || date >= latestDate) {
+            "لا يمكن تسجيل حركة بتاريخ أقدم من آخر حركة مخزنية ($latestDate). صحّح التاريخ لتجنب خطأ متوسط التكلفة."
+        }
         val currentQty = db.stock().qtyMicro(item.id, targetWarehouseId).fromMicro()
         val currentAvg = (db.stock().lastMovementAtWarehouse(item.id, targetWarehouseId)?.avgCostMicro ?: 0L).fromMicro()
         val current = StockState(currentQty, currentAvg)
@@ -169,6 +173,14 @@ class AccountingRepository(private val db: AppDatabase) {
         val destination = warehouses.firstOrNull { it.name.equals(toWarehouseName.trim(), true) }
             ?: throw IllegalArgumentException("مستودع الوجهة غير موجود")
         require(source.id != destination.id) { "مستودع المصدر والوجهة يجب أن يختلفا" }
+        val sourceLatestDate = db.stock().latestMovementDate(item.id, source.id)
+        val destinationLatestDate = db.stock().latestMovementDate(item.id, destination.id)
+        require(sourceLatestDate == null || date >= sourceLatestDate) {
+            "تاريخ التحويل أقدم من آخر حركة في مستودع المصدر ($sourceLatestDate)"
+        }
+        require(destinationLatestDate == null || date >= destinationLatestDate) {
+            "تاريخ التحويل أقدم من آخر حركة في مستودع الوجهة ($destinationLatestDate)"
+        }
         val sourceQty = db.stock().qtyMicro(item.id, source.id).fromMicro()
         val sourceAvg = (db.stock().lastMovementAtWarehouse(item.id, source.id)?.avgCostMicro ?: 0L).fromMicro()
         val (sourceNext, _) = MovingAverage.issue(StockState(sourceQty, sourceAvg), quantity, allowNegative = false)

@@ -56,6 +56,10 @@ class InvoiceRepository(private val db: AppDatabase) {
         }
         val store = InMemoryStockStore()
         for (id in itemIds.values) {
+            val latestDate = db.stock().latestMovementDate(id, d.warehouseId)
+            require(latestDate == null || d.date >= latestDate) {
+                "لا يمكن ترحيل الفاتورة بتاريخ أقدم من آخر حركة للصنف ${db.items().byId(id)?.name.orEmpty()} ($latestDate). صحّح التاريخ لتجنب خطأ متوسط التكلفة."
+            }
             val qty = db.stock().qtyMicro(id, d.warehouseId).fromMicro()
             val avg = (db.stock().lastMovementAtWarehouse(id, d.warehouseId)?.avgCostMicro ?: 0L).fromMicro()
             store.put(id, d.warehouseId, StockState(qty, avg))
@@ -121,6 +125,10 @@ class InvoiceRepository(private val db: AppDatabase) {
 
         val movements = db.stock().byRef("invoice", invoiceId)
         for (movement in movements) {
+            val latestDate = db.stock().latestMovementDate(movement.itemId, movement.warehouseId)
+            require(latestDate == null || date >= latestDate) {
+                "تاريخ الإلغاء أقدم من آخر حركة مخزنية للصنف في المستودع ($latestDate)"
+            }
             val originalQty = movement.qtyMicro.fromMicro()
             if (originalQty.signum() == 0) continue
             val currentQty = db.stock().qtyMicro(movement.itemId, movement.warehouseId).fromMicro()
