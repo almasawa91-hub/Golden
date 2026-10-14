@@ -18,7 +18,10 @@ class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : 
             setBackgroundColor(BG)
         }
         val sale = kind == InvoiceKind.SALE
-        root.addView(a.header("تفاصيل الفاتورة", { a.back() }, "PDF" to {
+        root.addView(a.header(
+            "تفاصيل الفاتورة",
+            { a.back() },
+            "PDF" to {
             a.lifecycleScope.launch {
                 try {
                     val invoice = a.app.db.invoices().byId(invoiceId) ?: throw IllegalArgumentException("الفاتورة غير موجودة")
@@ -56,7 +59,46 @@ class InvoiceDetailScreen(private val invoiceId: Long, val kind: InvoiceKind) : 
                     a.toast(e.message ?: "تعذر تجهيز الفاتورة")
                 }
             }
-        }))
+        },
+            "حراري" to {
+                a.lifecycleScope.launch {
+                    try {
+                        val invoice = a.app.db.invoices().byId(invoiceId) ?: throw IllegalArgumentException("الفاتورة غير موجودة")
+                        val lines = a.app.db.invoices().linesForInvoice(invoiceId)
+                        val companyName = a.app.settings.get("company_name").ifBlank { "المحاسب الذهبي" }
+                        val phone = a.app.settings.get("company_phone")
+                        val address = a.app.settings.get("company_address")
+                        val rows = mutableListOf(
+                            listOf(companyName),
+                            if (phone.isBlank()) emptyList() else listOf("هاتف: $phone"),
+                            if (address.isBlank()) emptyList() else listOf(address),
+                            listOf("فاتورة ${if (sale) "بيع" else "شراء"} رقم ${invoice.number}"),
+                            listOf("التاريخ: ${invoice.date}"),
+                            listOf("الطرف: ${invoice.partyName}"),
+                            listOf("------------------------------"),
+                        ).filter { it.isNotEmpty() }.toMutableList()
+                        lines.forEach { line ->
+                            rows.add(listOf(line.itemName))
+                            rows.add(listOf("${fmtMicro(line.qtyMicro)} × ${fmtMicro(line.priceMicro)} = ${fmt(line.qtyMicro.fromMicro().multiply(line.priceMicro.fromMicro()))}"))
+                        }
+                        rows.add(listOf("------------------------------"))
+                        rows.add(listOf("الخصم: ${fmtMicro(invoice.discountMicro)}"))
+                        rows.add(listOf("الضريبة: ${fmtMicro(invoice.taxMicro)}"))
+                        rows.add(listOf("الرسوم: ${fmtMicro(invoice.feesMicro)}"))
+                        rows.add(listOf("الإجمالي: ${fmtMicro(invoice.totalMicro)}"))
+                        rows.add(listOf("المدفوع: ${fmtMicro(invoice.paidMicro)}"))
+                        rows.add(listOf("المتبقي: ${fmtMicro(invoice.totalMicro - invoice.paidMicro)}"))
+                        rows.add(listOf("شكراً لتعاملكم معنا"))
+                        a.choose("عرض ورق الإيصال", listOf("حراري 58 مم", "حراري 80 مم")) { widthIndex ->
+                            val width = if (widthIndex == 0) 164 else 227
+                            a.requestReportPdf("إيصال حراري ${invoice.number}", emptyList(), rows, width, 1800)
+                        }
+                    } catch (e: Exception) {
+                        a.toast(e.message ?: "تعذر تجهيز الإيصال الحراري")
+                    }
+                }
+            },
+        ))
         val body = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(18))

@@ -65,7 +65,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) importBackup(uri) }
 
-    private data class PdfPayload(val title: String, val columns: List<String>, val rows: List<List<String>>)
+    private data class PdfPayload(
+        val title: String,
+        val columns: List<String>,
+        val rows: List<List<String>>,
+        val pageWidth: Int = 595,
+        val pageHeight: Int = 842,
+    )
     private var pendingPdf: PdfPayload? = null
     private val pdfLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
@@ -112,8 +118,14 @@ class MainActivity : AppCompatActivity() {
     fun back() { if (stack.size > 1) { stack.removeAt(stack.size - 1); show() } }
     private fun show() { container.removeAllViews(); container.addView(stack.last().build(this)) }
 
-    fun requestReportPdf(title: String, columns: List<String>, rows: List<List<String>>) {
-        pendingPdf = PdfPayload(title, columns.toList(), rows.map { it.toList() })
+    fun requestReportPdf(
+        title: String,
+        columns: List<String>,
+        rows: List<List<String>>,
+        pageWidth: Int = 595,
+        pageHeight: Int = 842,
+    ) {
+        pendingPdf = PdfPayload(title, columns.toList(), rows.map { it.toList() }, pageWidth, pageHeight)
         val safeTitle = title.replace(" ", "-").replace("/", "-").replace("\\", "-")
         pdfLauncher.launch("Golden-report-$safeTitle-${today()}.pdf")
     }
@@ -123,7 +135,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(destination, "w")?.use { output ->
-                        ReportPdf.write(output, payload.title, payload.columns, payload.rows)
+                        ReportPdf.write(output, payload.title, payload.columns, payload.rows, payload.pageWidth, payload.pageHeight)
                     } ?: throw IllegalStateException("تعذر فتح ملف PDF للحفظ")
                 }
                 toast("تم تصدير التقرير بصيغة PDF")

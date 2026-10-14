@@ -16,24 +16,26 @@ object ReportPdf {
         title: String,
         columns: List<String>,
         rows: List<List<String>>,
+        pageWidth: Int = 595,
+        pageHeight: Int = 842,
     ) {
         val document = PdfDocument()
-        val pageWidth = 595
-        val pageHeight = 842
-        val margin = 34f
+        val thermal = pageWidth < 300
+        val margin = if (thermal) 8f else 34f
         val usableWidth = (pageWidth - margin * 2).toInt()
+        val titleSize = if (thermal) 12f else 18f
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.BLACK
-            textSize = 11.5f
+            textSize = if (thermal) 8.5f else 11.5f
         }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.rgb(15, 23, 42)
-            textSize = 18f
+            textSize = titleSize
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         }
         val smallPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.DKGRAY
-            textSize = 9f
+            textSize = if (thermal) 7f else 9f
         }
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.LTGRAY
@@ -71,7 +73,7 @@ object ReportPdf {
             y += 8f
             if (columns.isNotEmpty()) {
                 val headerText = columns.mapIndexed { index, name -> "${name}: " }.joinToString("     ")
-                val header = layout(headerText, titlePaint.apply { textSize = 10.5f })
+                val header = layout(headerText, titlePaint.apply { textSize = if (thermal) 8.5f else 10.5f })
                 started.canvas.save()
                 started.canvas.translate(margin, y)
                 header.draw(started.canvas)
@@ -79,7 +81,7 @@ object ReportPdf {
                 y += header.height + 6f
                 started.canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
                 y += 8f
-                titlePaint.textSize = 18f
+                titlePaint.textSize = titleSize
             }
             return started
         }
