@@ -5,6 +5,10 @@ import android.widget.*
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التصنيف", "سعر البيع", "الباركود", "الصلاحية"), { a ->
     a.ask("صنف جديد", listOf(
@@ -29,6 +33,7 @@ class ItemsScreen : ListScreen("الأصناف", listOf("الصنف", "التص�
         "±" to { a.push(StockAdjustmentScreen()) },
         "المستودعات" to { a.push(WarehousesScreen()) },
         "⇄" to { a.push(StockTransferScreen()) },
+        "الصلاحية" to { a.push(ExpiryReportScreen()) },
     )
     override suspend fun load(a: MainActivity) = a.app.accounting.items().map {
         Row(listOf(it.name, it.category, fmtMicro(it.salePriceMicro), it.barcode ?: "", it.expiryDate ?: "—"))
@@ -158,5 +163,24 @@ class CompanySetupScreen(private val firstRun: Boolean) : Screen {
             taxNumber.setText(a.app.settings.get("company_tax_number"))
         }
         return root
+    }
+}
+
+
+class ExpiryReportScreen : ListScreen(
+    "الأصناف المنتهية وقريبة الصلاحية",
+    listOf("الصنف", "التصنيف", "تاريخ الصلاحية", "الحالة")
+) {
+    override suspend fun load(a: MainActivity): List<Row> {
+        val today = today()
+        val end = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 90) }.time
+        val endDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(end)
+        return a.app.accounting.items()
+            .filter { item -> item.expiryDate != null && isValidIsoDate(item.expiryDate) && item.expiryDate <= endDate }
+            .sortedBy { it.expiryDate }
+            .map { item ->
+                val expiry = item.expiryDate.orEmpty()
+                Row(listOf(item.name, item.category, expiry, if (expiry < today) "منتهي" else "ينتهي خلال 90 يوماً"))
+            }
     }
 }

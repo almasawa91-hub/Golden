@@ -19,7 +19,7 @@ jobs:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v3
         with: { gradle-version: 8.2 }
-      - name: Unit + integration tests (accounting, inventory, invoice flow)
+      - name: Unit tests (accounting, inventory, invoice engine)
         run: gradle :core:test --stacktrace
       - name: Lint
         run: gradle :data:lintDebug :app:lintDebug --stacktrace

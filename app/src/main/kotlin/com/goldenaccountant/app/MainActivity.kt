@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
         is AccountsScreen, is StatementScreen, is StatementAccountPickerScreen, is ChartScreen, is AccountCategoriesScreen, is CategoryAccountsScreen -> "accounts"
         is VouchersScreen, is VoucherScreen -> "vouchers"
         is JournalScreen -> "journal"
-        is ItemsScreen, is StockAdjustmentScreen, is StockReportScreen, is WarehousesScreen, is StockTransferScreen, is StockTransferHistoryScreen, is WarehouseStockScreen -> "inventory"
+        is ItemsScreen, is StockAdjustmentScreen, is StockReportScreen, is WarehousesScreen, is StockTransferScreen, is StockTransferHistoryScreen, is WarehouseStockScreen, is ExpiryReportScreen -> "inventory"
         is ReportsHubScreen, is TrialBalanceScreen, is IncomeScreen, is BalanceSheetScreen -> "reports"
         is SettingsScreen -> "settings"
         is UsersScreen, is AuditScreen -> "admin"
