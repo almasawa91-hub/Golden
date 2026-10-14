@@ -14,6 +14,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+
+fun isValidIsoDate(value: String): Boolean = try {
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+    val parsed = formatter.parse(value)
+    parsed != null && formatter.format(parsed) == value
+} catch (_: Exception) { false }
 
 interface Screen { fun build(a: MainActivity): View }
 
