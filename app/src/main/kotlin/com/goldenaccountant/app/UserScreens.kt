@@ -42,8 +42,8 @@ class UserSetupScreen(private val firstRun: Boolean) : Screen {
             if (password.text.toString() != confirm.text.toString()) return@pill a.toast("كلمتا المرور غير متطابقتين")
             a.lifecycleScope.launch {
                 try {
-                    val id = a.users.createUser(username.text.toString(), name.text.toString(), password.text.toString(), "ADMIN")
-                    val user = a.users.all().first { it.id == id }
+                    val id = a.userRepository().createUser(username.text.toString(), name.text.toString(), password.text.toString(), "ADMIN")
+                    val user = a.userRepository().all().first { it.id == id }
                     a.app.settings.put("session_username", user.username)
                     a.setCurrentUser(user)
                     a.setRoot(HomeScreen())
@@ -67,7 +67,7 @@ class LoginScreen : Screen {
         listOf(username, password).forEach { form.addView(it) }
         form.addView(a.pill("دخول") {
             a.lifecycleScope.launch {
-                val user = a.users.authenticate(username.text.toString(), password.text.toString())
+                val user = a.userRepository().authenticate(username.text.toString(), password.text.toString())
                 if (user == null) a.toast("اسم الدخول أو كلمة المرور غير صحيحة أو الحساب معطّل")
                 else {
                     a.app.settings.put("session_username", user.username)
@@ -87,7 +87,7 @@ class UsersScreen : ListScreen("إدارة المستخدمين", listOf("الا
         a.ask("مستخدم جديد", listOf("الاسم الظاهر", "اسم الدخول", "كلمة المرور"), setOf(2)) { values ->
             a.lifecycleScope.launch {
                 try {
-                    a.users.createUser(values.getOrElse(1) { "" }, values.getOrElse(0) { "" }, values.getOrElse(2) { "" }, roles[index])
+                    a.userRepository().createUser(values.getOrElse(1) { "" }, values.getOrElse(0) { "" }, values.getOrElse(2) { "" }, roles[index])
                     a.toast("تم إنشاء المستخدم")
                     a.refresh()
                 } catch (e: Exception) { a.toast(e.message ?: "تعذر إنشاء المستخدم") }
@@ -95,14 +95,14 @@ class UsersScreen : ListScreen("إدارة المستخدمين", listOf("الا
         }
     }
 }) {
-    override suspend fun load(a: MainActivity): List<Row> = a.users.all().map { user ->
+    override suspend fun load(a: MainActivity): List<Row> = a.userRepository().all().map { user ->
         Row(listOf(user.displayName, user.username, RolePolicy.label(user.role), if (user.active) "نشط" else "معطّل")) {
             if (user.id == a.currentUser?.id) a.toast("لا يمكن تغيير حالة حسابك أثناء تسجيل الدخول")
             else AlertDialog.Builder(a).setTitle(user.displayName)
                 .setMessage(if (user.active) "تعطيل هذا المستخدم؟" else "إعادة تفعيل هذا المستخدم؟")
                 .setPositiveButton(if (user.active) "تعطيل" else "تفعيل") { _, _ ->
                     a.lifecycleScope.launch {
-                        try { a.users.setActive(user.id, !user.active); a.refresh() }
+                        try { a.userRepository().setActive(user.id, !user.active); a.refresh() }
                         catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الحالة") }
                     }
                 }.setNegativeButton("إلغاء", null).show()
