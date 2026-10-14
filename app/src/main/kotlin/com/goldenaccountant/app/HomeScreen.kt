@@ -49,7 +49,7 @@ class HomeScreen: Screen {
   body.addView(actions)
   body.addView(a.text("القوائم المحاسبية",17f,NAVY,true).apply{setPadding(a.dp(4),a.dp(20),0,a.dp(10))})
   listOf("دليل الحسابات","حركة الصندوق","ميزان المراجعة","قائمة الدخل","المركز المالي","حركة الأصناف","القيود اليومية","القيود الافتتاحية").forEach{name->
-   body.addView(a.rowOf(name,"›").apply{setOnClickListener{when(name){"دليل الحسابات"->a.push(ChartScreen());"حركة الصندوق"->a.push(StatementScreen(-3));"ميزان المراجعة"->a.push(TrialBalanceScreen());"قائمة الدخل"->a.push(IncomeScreen());"المركز المالي"->a.push(BalanceSheetScreen());"حركة الأصناف"->a.push(StockReportScreen());"القيود اليومية"->a.push(JournalScreen(false));"القيود الافتتاحية"->a.push(JournalScreen(true))}}})
+   body.addView(a.rowOf(name,"›").apply{setOnClickListener{when(name){"دليل الحسابات"->a.push(ChartScreen());"حركة الصندوق"->a.push(StatementAccountPickerScreen());"ميزان المراجعة"->a.push(TrialBalanceScreen());"قائمة الدخل"->a.push(IncomeScreen());"المركز المالي"->a.push(BalanceSheetScreen());"حركة الأصناف"->a.push(StockReportScreen());"القيود اليومية"->a.push(JournalScreen(false));"القيود الافتتاحية"->a.push(JournalScreen(true))}}})
   }
   root.addView(ScrollView(a).apply{addView(body)},LinearLayout.LayoutParams(-1,0,1f))
   root.addView(a.footer(null,"المخزن الرئيسي"));return root
