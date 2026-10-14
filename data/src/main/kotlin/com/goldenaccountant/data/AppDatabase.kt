@@ -14,9 +14,9 @@ import com.goldenaccountant.core.chart.ChartOfAccounts
         AccountGroupE::class, AccountE::class, JournalEntryE::class, JournalLineE::class,
         WarehouseE::class, ItemE::class, StockMovementE::class, CurrencyE::class,
         SettingE::class, InvoiceE::class, InvoiceLineE::class,
-        AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class,
+        AccountCategoryE::class, AccountCategoryLinkE::class, InvoiceCancellationE::class, AppUserE::class, AuditLogE::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +29,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun invoices(): InvoiceDao
     abstract fun invoiceCancellations(): InvoiceCancellationDao
     abstract fun accountCategories(): AccountCategoryDao
+    abstract fun users(): UserDao
+    abstract fun auditLogs(): AuditLogDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -71,8 +73,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS app_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    username TEXT NOT NULL,
+                    displayName TEXT NOT NULL,
+                    passwordSalt TEXT NOT NULL,
+                    passwordHash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    active INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL
+                )""")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_app_users_username ON app_users(username)")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    action TEXT NOT NULL,
+                    entityType TEXT NOT NULL,
+                    entityId INTEGER,
+                    details TEXT NOT NULL,
+                    actorUserId INTEGER,
+                    actorName TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL
+                )""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_audit_logs_createdAt ON audit_logs(createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_audit_logs_entityType_entityId ON audit_logs(entityType, entityId)")
+            }
+        }
+
         fun build(ctx: Context): AppDatabase = Room.databaseBuilder(ctx, AppDatabase::class.java, "golden.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         /** تهيئة دليل الحسابات والمخزن والتصنيفات النظامية من دون استبدال بيانات المستخدم. */
