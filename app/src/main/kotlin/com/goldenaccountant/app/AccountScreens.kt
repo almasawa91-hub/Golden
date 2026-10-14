@@ -18,9 +18,39 @@ class AccountsScreen : ListScreen("الحسابات", listOf("الحساب", "ا
         }
     }
 }) {
-    override suspend fun load(a: MainActivity) = a.app.accounting.balances().map { b ->
-        val type = ChartOfAccounts.groups.firstOrNull { it.id == b.account.groupId }?.name ?: ""
-        Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
+    private var categoryId: Long? = null
+    private var categoryName: String = "كل الحسابات"
+
+    override fun actions(a: MainActivity) = listOf(
+        categoryName to {
+            a.lifecycleScope.launch {
+                try {
+                    val categories = a.app.db.accountCategories().all().filter { it.enabled }
+                    val labels = listOf("كل الحسابات") + categories.map { it.name }
+                    a.choose("تصفية الحسابات حسب التصنيف", labels) { index ->
+                        if (index == 0) {
+                            categoryId = null
+                            categoryName = "كل الحسابات"
+                            a.refresh()
+                        } else {
+                            categoryId = categories[index - 1].id
+                            categoryName = categories[index - 1].name
+                            a.refresh()
+                        }
+                    }
+                } catch (e: Exception) { a.toast(e.message ?: "تعذر تحميل التصنيفات") }
+            }
+        },
+    )
+
+    override suspend fun load(a: MainActivity): List<Row> {
+        val balances = a.app.accounting.balances()
+        val category = categoryId
+        val selectedIds = category?.let { a.app.db.accountCategories().accountIdsForCategory(it).toSet() }
+        return balances.filter { selectedIds == null || it.account.id in selectedIds }.map { b ->
+            val type = ChartOfAccounts.groups.firstOrNull { it.id == b.account.groupId }?.name ?: ""
+            Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
+        }
     }
 }
 
