@@ -142,17 +142,23 @@ class CategoryAccountsScreen(private val categoryId: Long) : ListScreen(
                                 catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الأيقونة") }
                             }
                         }
-                        "تقديم التصنيف", "تأخير التصنيف" -> a.lifecycleScope.launch {
-                            try {
-                                val all = dao.all()
-                                val index = all.indexOfFirst { it.id == categoryId }
-                                val nextIndex = if (options[index] == "تقديم التصنيف") index - 1 else index + 1
-                                if (index < 0 || nextIndex !in all.indices) return@launch a.toast("وصل التصنيف إلى حد الترتيب")
-                                val neighbor = all[nextIndex]
-                                dao.update(category.copy(sortOrder = neighbor.sortOrder))
-                                dao.update(neighbor.copy(sortOrder = category.sortOrder))
-                                a.refresh()
-                            } catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الترتيب") }
+                        "تقديم التصنيف", "تأخير التصنيف" -> {
+                            val moveUp = options[index] == "تقديم التصنيف"
+                            a.lifecycleScope.launch {
+                                try {
+                                    val all = dao.all()
+                                    val currentIndex = all.indexOfFirst { it.id == categoryId }
+                                    val nextIndex = if (moveUp) currentIndex - 1 else currentIndex + 1
+                                    if (currentIndex < 0 || nextIndex !in all.indices) {
+                                        a.toast("وصل التصنيف إلى حد الترتيب")
+                                    } else {
+                                        val neighbor = all[nextIndex]
+                                        dao.update(category.copy(sortOrder = neighbor.sortOrder))
+                                        dao.update(neighbor.copy(sortOrder = category.sortOrder))
+                                        a.refresh()
+                                    }
+                                } catch (e: Exception) { a.toast(e.message ?: "تعذر تغيير الترتيب") }
+                            }
                         }
                         "تعطيل التصنيف", "تفعيل التصنيف" -> a.lifecycleScope.launch {
                             dao.update(category.copy(enabled = !category.enabled))
