@@ -131,7 +131,19 @@ object LegacyDatabaseImporter {
                     }
                     if (categoryId != null) categoryByGroup[groupId] = categoryId
                 }
-                // Customer rows include both contact accounts and some legacy/system rows.
+                // Ensure separate, colored categories before linking imported accounts.
+                val categorySpecs = listOf(
+                    Triple("العملاء", 123L, "#2563EB"), Triple("العملاء (الثقه)", 126L, "#0D9488"),
+                    Triple("عملاء آجل", 123L, "#1D4ED8"), Triple("عملاء جملة", 123L, "#3B82F6"),
+                    Triple("عملاء تجزئة", 123L, "#60A5FA"), Triple("الموردون", 221L, "#7C3AED"),
+                    Triple("الصناديق", 121L, "#059669"), Triple("البنوك", 122L, "#0891B2"),
+                    Triple("الأصول", 12L, "#D97706"), Triple("الأصول الثابتة", 11L, "#B45309"),
+                    Triple("الأصول المتداولة", 12L, "#F59E0B"), Triple("الالتزامات", 22L, "#DC2626"),
+                    Triple("حقوق الملكية", 21L, "#9333EA"), Triple("المصروفات", 322L, "#EA580C"),
+                    Triple("الإيرادات", 411L, "#16A34A"), Triple("أخرى", 124L, "#64748B"),
+                )
+                categorySpecs.forEachIndexed { index, spec -> ensureCategory(target, spec.first, spec.second, spec.third, index) }
+
                 source.rawQuery("SELECT id,name,gsm,acc_p_id,cus_type_id FROM customers ORDER BY id", null).use { c ->
                     while (c.moveToNext()) {
                         val sourceId = c.getLong(0)
@@ -140,38 +152,36 @@ object LegacyDatabaseImporter {
                             putMap(target, "customers", sourceId.toString(), "accounts", null, "SKIPPED_EMPTY_NAME")
                             continue
                         }
-                        val existing = scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-                        if (existing != null) {
-                            putMap(target, "customers", sourceId.toString(), "accounts", existing, "MATCHED_NAME")
-                            accountsMatched++
-                            continue
-                        }
                         val sourceGroup = if (c.isNull(3)) 0L else c.getLong(3)
-                        val groupId = if (sourceGroup in groupIds) sourceGroup else if (123L in groupIds) 123L else groupIds.firstOrNull() ?: 1L
-                        val phone = c.getString(2)?.trim()?.takeIf { it.isNotEmpty() }
-                        target.execSQL(
-                            "INSERT INTO accounts(name,groupId,isSystem,phone,creditLimitMicro) VALUES(?,?,0,?,0)",
-                            arrayOf(name, groupId, phone),
-                        )
-                        val targetId = scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-                        putMap(target, "customers", sourceId.toString(), "accounts", targetId, "INSERTED")
-                        accountsAdded++
-                    }
-                }
-
-                target.query("SELECT id,groupId FROM accounts").use { c ->
-                    while (c.moveToNext()) {
-                        val accountId = c.getLong(0)
-                        var groupId = c.getLong(1)
-                        val visited = mutableSetOf<Long>()
-                        while (groupId != 0L && visited.add(groupId)) {
-                            val categoryId = categoryByGroup[groupId]
-                            if (categoryId != null) {
-                                target.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)",
-                                    arrayOf(accountId, categoryId))
-                            }
-                            groupId = parentByGroup[groupId] ?: 0L
+                        val customerType = if (c.isNull(4)) 0L else c.getLong(4)
+                        val preferredGroup = when (customerType) {
+                            1L -> 221L; 4L -> 121L; 5L -> 322L; 6L -> 411L; 7L -> 124L; else -> 123L
                         }
+                        val groupId = when {
+                            sourceGroup in groupIds -> sourceGroup
+                            preferredGroup in groupIds -> preferredGroup
+                            123L in groupIds -> 123L
+                            else -> groupIds.firstOrNull() ?: 1L
+                        }
+                        val phone = c.getString(2)?.trim()?.takeIf { it.isNotEmpty() }
+                        val existing = scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+                        val targetId = if (existing != null) {
+                            val isSystem = scalar(target, "SELECT isSystem FROM accounts WHERE id = ?", arrayOf(existing)) != 0L
+                            if (!isSystem) target.execSQL(
+                                "UPDATE accounts SET groupId=?, phone=COALESCE(NULLIF(?,''),phone) WHERE id=?",
+                                arrayOf(groupId, phone, existing),
+                            )
+                            accountsMatched++
+                            existing
+                        } else {
+                            target.execSQL("INSERT INTO accounts(name,groupId,isSystem,phone,creditLimitMicro) VALUES(?,?,0,?,0)", arrayOf(name, groupId, phone))
+                            accountsAdded++
+                            scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+                        }
+                        if (targetId != null) {
+                            linkLegacyCategory(target, targetId, groupId, customerType)
+                            putMap(target, "customers", sourceId.toString(), "accounts", targetId, if (existing != null) "MATCHED_NAME" else "INSERTED")
+                        } else putMap(target, "customers", sourceId.toString(), "accounts", null, "SKIPPED_UNRESOLVED")
                     }
                 }
 
@@ -190,8 +200,8 @@ object LegacyDatabaseImporter {
                 }
                 val latestBasePrices = mutableMapOf<Long, BigDecimal>()
                 source.rawQuery("""SELECT p.item_id, p.SLS_U_PRICE FROM item_price p
-                    JOIN (SELECT item_id, MAX(date_) AS max_date FROM item_price WHERE curr_id = 0 GROUP BY item_id) x
-                    ON x.item_id=p.item_id AND x.max_date=p.date_ WHERE p.curr_id = 0""", null).use { c ->
+                    JOIN (SELECT item_id, MAX(date_) AS max_date FROM item_price WHERE curr_id = 0 AND SLS_U_PRICE > 0 GROUP BY item_id) x
+                    ON x.item_id=p.item_id AND x.max_date=p.date_ WHERE p.curr_id = 0 AND p.SLS_U_PRICE > 0""", null).use { c ->
                     while (c.moveToNext()) {
                         val price = c.getString(1)?.toBigDecimalOrNull()
                         if (price != null) latestBasePrices[c.getLong(0)] = price
@@ -260,17 +270,13 @@ object LegacyDatabaseImporter {
                             putMap(target, "items", sourceId.toString(), "items", null, "SKIPPED_EMPTY_NAME")
                             continue
                         }
-                        val existingByName = scalarNullable(target, "SELECT id FROM items WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-                        val barcode = c.getString(10)?.trim()?.takeIf { it.isNotEmpty() }
-                        val existingByBarcode = barcode?.let { scalarNullable(target, "SELECT id FROM items WHERE barcode = ? LIMIT 1", arrayOf(it)) }
-                        val existing = existingByName ?: existingByBarcode
                         val typeId = if (c.isNull(2)) -1L else c.getLong(2)
                         val unitId = if (c.isNull(9)) -1L else c.getLong(9)
                         val category = typeNames[typeId]?.takeIf { it.isNotBlank() } ?: "عام"
-                        val unit = unitNames[unitId]?.takeIf { it.isNotBlank() } ?: "حبة"
+                        val unit = unitNames[unitId]?.takeIf { it.isNotBlank() && it != "بدون" } ?: "حبة"
                         val currencyId = if (c.isNull(6)) baseCurrencyId else c.getLong(6)
                         val sourcePrice = latestBasePrices[sourceId] ?: (c.getString(5)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                        val price = if (currencyId == baseCurrencyId) toMicro(sourcePrice) else 0L
+                        val price = if (currencyId == baseCurrencyId && sourcePrice.signum() > 0) toMicro(sourcePrice) else 0L
                         val expiry = c.getString(7)?.trim()?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
                         val notes = buildString {
                             c.getString(8)?.trim()?.takeIf { it.isNotEmpty() }?.let { append(it) }
@@ -279,43 +285,40 @@ object LegacyDatabaseImporter {
                                 append("السعر الأصلي: ").append(sourcePrice.toPlainString()).append(" (عملة المصدر رقم ").append(currencyId).append(")")
                             }
                         }
+                        val barcode = c.getString(10)?.trim()?.takeIf { it.isNotEmpty() }
+                        val existingByName = scalarNullable(target, "SELECT id FROM items WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+                        val existingByBarcode = barcode?.let { scalarNullable(target, "SELECT id FROM items WHERE barcode = ? LIMIT 1", arrayOf(it) }
+                        val existing = existingByName ?: existingByBarcode
+                        val targetId: Long
                         if (existing != null) {
-                            // Enrich matched rows instead of leaving previously-created blank records unchanged.
+                            val oldPrice = scalar(target, "SELECT salePriceMicro FROM items WHERE id=?", arrayOf(existing))
+                            val finalPrice = if (price > 0L) price else oldPrice
                             target.execSQL(
-                                """UPDATE items SET
-                                   barcode=CASE WHEN barcode IS NULL OR TRIM(barcode)='' THEN ? ELSE barcode END,
-                                   unit=CASE WHEN unit IS NULL OR TRIM(unit)='' OR unit='حبة' THEN ? ELSE unit END,
-                                   category=CASE WHEN category IS NULL OR TRIM(category)='' OR category='عام' THEN ? ELSE category END,
-                                   salePriceMicro=CASE WHEN salePriceMicro=0 AND ? > 0 THEN ? ELSE salePriceMicro END,
-                                   expiryDate=CASE WHEN expiryDate IS NULL OR TRIM(expiryDate)='' THEN ? ELSE expiryDate END,
-                                   notes=CASE WHEN notes IS NULL OR TRIM(notes)='' THEN ? ELSE notes END
+                                """UPDATE items SET unit=?, salePriceMicro=?, category=?,
+                                   expiryDate=COALESCE(?,expiryDate),
+                                   notes=CASE WHEN TRIM(?)='' THEN notes ELSE ? END,
+                                   barcode=CASE WHEN barcode IS NULL OR TRIM(barcode)='' THEN ? ELSE barcode END
                                    WHERE id=?""",
-                                arrayOf(barcode, unit, category, price, price, expiry, notes, existing))
-                            putMap(target, "items", sourceId.toString(), "items", existing, "MATCHED_NAME_OR_BARCODE")
+                                arrayOf(unit, finalPrice, category, expiry, notes, notes, barcode, existing),
+                            )
+                            targetId = existing
+                            putMap(target, "items", sourceId.toString(), "items", targetId, "MATCHED_NAME_OR_BARCODE")
                             itemsMatched++
-                            val qty = latestStock[sourceId]?.first ?: (c.getString(4)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                            if (qty.signum() != 0 && scalar(target, "SELECT COUNT(*) FROM stock_movements WHERE itemId=?", arrayOf(existing)) == 0L) {
-                                val cost = latestStock[sourceId]?.second ?: (c.getString(11)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                                val costMicro = if (cost.signum() >= 0) toMicro(cost) else 0L
-                                target.execSQL(
-                                    """INSERT INTO stock_movements(itemId,warehouseId,date,kind,qtyMicro,unitCostMicro,avgCostMicro,refType,refId)
-                                       VALUES(?,?,?,'LEGACY_BALANCE',?,?,?,?,?)""",
-                                    arrayOf(existing, warehouseId, snapshotDate, toMicro(qty), costMicro, costMicro, "legacy_import", sourceId),
-                                )
-                                stockBalancesAdded++
-                            }
-                            continue
+                        } else {
+                            target.execSQL(
+                                "INSERT INTO items(name,barcode,isService,unit,salePriceMicro,minStockMicro,category,expiryDate,notes) VALUES(?,?,0,?,?,0,?,?,?)",
+                                arrayOf(name, barcode, unit, price, category, expiry, notes),
+                            )
+                            targetId = scalar(target, "SELECT id FROM items WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+                            putMap(target, "items", sourceId.toString(), "items", targetId, "INSERTED")
+                            itemsAdded++
                         }
-                        target.execSQL(
-                            "INSERT INTO items(name,barcode,isService,unit,salePriceMicro,minStockMicro,category,expiryDate,notes) VALUES(?,?,0,?,?,0,?,?,?)",
-                            arrayOf(name, barcode, unit, price, category, expiry, notes),
-                        )
-                        val targetId = scalar(target, "SELECT id FROM items WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-                        putMap(target, "items", sourceId.toString(), "items", targetId, "INSERTED")
-                        itemsAdded++
 
+                        val alreadySnapshotted = scalar(target,
+                            "SELECT COUNT(*) FROM stock_movements WHERE refType='legacy_import' AND refId=?",
+                            arrayOf(sourceId))
                         val qty = latestStock[sourceId]?.first ?: (c.getString(4)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                        if (qty.signum() != 0) {
+                        if (alreadySnapshotted == 0L && qty.signum() != 0) {
                             val cost = latestStock[sourceId]?.second ?: (c.getString(11)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
                             val qtyMicro = toMicro(qty)
                             val costMicro = if (cost.signum() >= 0) toMicro(cost) else 0L
@@ -362,6 +365,32 @@ object LegacyDatabaseImporter {
         } finally {
             source.close()
         }
+    }
+
+    private fun ensureCategory(db: SupportSQLiteDatabase, name: String, groupId: Long, color: String, sortOrder: Int): Long {
+        val existing = scalarNullable(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+        if (existing != null) return existing
+        db.execSQL("INSERT INTO account_categories(name,groupId,color,icon,sortOrder,enabled,isSystem) VALUES(?,?,?,'folder',?,1,1)", arrayOf(name, groupId, color, sortOrder))
+        return scalar(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+    }
+
+    private fun linkLegacyCategory(db: SupportSQLiteDatabase, accountId: Long, groupId: Long, customerType: Long) {
+        val name = when (customerType) {
+            1L -> "الموردون"; 4L -> "الصناديق"; 5L -> "المصروفات"; 6L -> "الإيرادات"; 7L -> "أخرى"
+            else -> when (groupId) {
+                123L -> "العملاء"; 126L -> "العملاء (الثقه)"; 121L -> "الصناديق"; 122L -> "البنوك"
+                111L, 11L, 13L -> "الأصول الثابتة"
+                1L, 12L, 125L, 127L, 128L, 129L -> "الأصول"
+                21L, 211L, 212L, 213L, 214L -> "حقوق الملكية"
+                2L, 22L, 23L, 221L, 222L, 223L, 224L, 225L -> "الالتزامات"
+                3L, 31L, 311L, 312L, 313L, 314L, 315L, 32L, 321L, 322L, 323L, 3221L, 3222L, 3223L -> "المصروفات"
+                4L, 41L, 42L, 411L, 412L, 413L, 421L -> "الإيرادات"
+                else -> "أخرى"
+            }
+        }
+        val categoryId = scalarNullable(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
+            ?: ensureCategory(db, name, groupId, "#64748B", 99)
+        db.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)", arrayOf(accountId, categoryId))
     }
 
     private fun archiveSourceTable(source: SQLiteDatabase, target: SupportSQLiteDatabase, table: String): Long {
