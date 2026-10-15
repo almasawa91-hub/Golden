@@ -654,24 +654,38 @@ object LegacyDatabaseImporter {
 
     private fun ensureCategory(db: SupportSQLiteDatabase, name: String, groupId: Long, color: String, sortOrder: Int): Long {
         val existing = scalarNullable(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-        if (existing != null) return existing
+        if (existing != null) {
+            db.execSQL(
+                "UPDATE account_categories SET groupId=COALESCE(groupId,?),color=?,sortOrder=? WHERE id=?",
+                arrayOf(groupId, color, sortOrder, existing),
+            )
+            return existing
+        }
         db.execSQL("INSERT INTO account_categories(name,groupId,color,icon,sortOrder,enabled,isSystem) VALUES(?,?,?,'folder',?,1,1)", arrayOf(name, groupId, color, sortOrder))
         return scalar(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
     }
 
     private fun linkLegacyCategory(db: SupportSQLiteDatabase, accountId: Long, groupId: Long, customerType: Long) {
-        val name = when (customerType) {
-            1L -> "الموردون"; 4L -> "الصناديق"; 5L -> "المصروفات"; 6L -> "الإيرادات"; 7L -> "أخرى"
-            else -> when (groupId) {
-                123L -> "العملاء"; 126L -> "العملاء (الثقه)"; 121L -> "الصناديق"; 122L -> "البنوك"
-                111L, 11L, 13L -> "الأصول الثابتة"
-                1L, 12L, 125L, 127L, 128L, 129L -> "الأصول"
-                21L, 211L, 212L, 213L, 214L -> "حقوق الملكية"
-                2L, 22L, 23L, 221L, 222L, 223L, 224L, 225L -> "الالتزامات"
-                3L, 31L, 311L, 312L, 313L, 314L, 315L, 32L, 321L, 322L, 323L, 3221L, 3222L, 3223L -> "المصروفات"
-                4L, 41L, 42L, 411L, 412L, 413L, 421L -> "الإيرادات"
-                else -> "أخرى"
-            }
+        val groupCategory = when (groupId) {
+            123L -> "العملاء"
+            126L -> "العملاء (الثقه)"
+            121L -> "الصناديق"
+            122L -> "البنوك"
+            221L -> "الموردون"
+            111L, 11L, 13L -> "الأصول الثابتة"
+            1L, 12L, 125L, 127L, 128L, 129L -> "الأصول"
+            21L, 211L, 212L, 213L, 214L -> "حقوق الملكية"
+            2L, 22L, 23L, 222L, 223L, 224L, 225L -> "الالتزامات"
+            3L, 31L, 311L, 312L, 313L, 314L, 315L, 32L, 321L, 322L, 323L, 3221L, 3222L, 3223L -> "المصروفات"
+            4L, 41L, 42L, 411L, 412L, 413L, 421L -> "الإيرادات"
+            else -> null
+        }
+        val name = groupCategory ?: when (customerType) {
+            1L -> "الموردون"
+            4L -> "الصناديق"
+            5L -> "المصروفات"
+            6L -> "الإيرادات"
+            else -> "أخرى"
         }
         val categoryId = scalarNullable(db, "SELECT id FROM account_categories WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
             ?: ensureCategory(db, name, groupId, "#64748B", 99)
