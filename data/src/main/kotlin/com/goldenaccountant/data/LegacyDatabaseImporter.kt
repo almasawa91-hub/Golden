@@ -404,19 +404,23 @@ object LegacyDatabaseImporter {
                 // Only balanced, fully-mapped receipt/payment groups are posted.
                 val currentVoucherResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate)
                 val historicalVoucherResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate)
+                val extraHistoricalVoucherResult = importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate)
                 val currentTransferResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate,
                     "tr_type=0 AND bill_id<0 AND p_id>0")
                 val historicalTransferResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate,
                     "tr_type=0 AND bill_id<0 AND p_id>0")
-                voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first +
-                    currentTransferResult.first + historicalTransferResult.first
-                voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second +
-                    currentTransferResult.second + historicalTransferResult.second
+                val extraHistoricalTransferResult = importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate,
+                    "tr_type=0 AND bill_id<0 AND p_id>0")
+                voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first + extraHistoricalVoucherResult.first +
+                    currentTransferResult.first + historicalTransferResult.first + extraHistoricalTransferResult.first
+                voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second + extraHistoricalVoucherResult.second +
+                    currentTransferResult.second + historicalTransferResult.second + extraHistoricalTransferResult.second
 
                 val currentManualResult = importManualPairs(source, target, "transactions", baseCurrencyId, latestRate)
                 val historicalManualResult = importManualPairs(source, target, "transactions_h", baseCurrencyId, latestRate)
-                manualTransactionsPosted += currentManualResult.first + historicalManualResult.first
-                manualTransactionsForReview += currentManualResult.second + historicalManualResult.second
+                val extraHistoricalManualResult = importManualPairs(source, target, "transactions_h2", baseCurrencyId, latestRate)
+                manualTransactionsPosted += currentManualResult.first + historicalManualResult.first + extraHistoricalManualResult.first
+                manualTransactionsForReview += currentManualResult.second + historicalManualResult.second + extraHistoricalManualResult.second
 
                 // Every imported source row is idempotently archived. Financial records are
                 // intentionally marked for reconciliation instead of inventing debit/credit sides.
