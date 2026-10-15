@@ -264,7 +264,7 @@ object LegacyDatabaseImporter {
                         var rowIndex = 0L
                         while (c.moveToNext()) {
                             val sourceId = if (idIndex >= 0 && !c.isNull(idIndex)) c.getString(idIndex)
-                                else "${c.getString(c.getColumnIndex("bill_id")) ?: "row"}:${rowIndex}"
+                                else "row:${rowIndex}"
                             val targetTable = when (table) {
                                 "account_tree" -> "account_groups"
                                 "customers" -> "accounts"
@@ -298,7 +298,7 @@ object LegacyDatabaseImporter {
             var rowIndex = 0L
             while (c.moveToNext()) {
                 val sourceId = if (idIndex >= 0 && !c.isNull(idIndex)) c.getString(idIndex)
-                    else "${c.getString(c.getColumnIndex("bill_id")) ?: "row"}:${rowIndex}"
+                    else "row:${rowIndex}"
                 val json = JSONObject()
                 for (i in 0 until c.columnCount) {
                     val value: Any? = when (c.getType(i)) {
