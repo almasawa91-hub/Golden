@@ -242,45 +242,20 @@ object LegacyDatabaseImporter {
                     if (c.moveToFirst()) c.getLong(0) else 0L
                 }
                 val latestBasePrices = mutableMapOf<Long, BigDecimal>()
-                source.rawQuery("""SELECT p.item_id, p.SLS_U_PRICE FROM item_price p
-                    JOIN (SELECT item_id, MAX(date_) AS max_date FROM item_price WHERE curr_id = 0 AND SLS_U_PRICE > 0 GROUP BY item_id) x
-                    ON x.item_id=p.item_id AND x.max_date=p.date_ WHERE p.curr_id = 0 AND p.SLS_U_PRICE > 0""", null).use { c ->
-                    while (c.moveToNext()) {
-                        val price = c.getString(1)?.toBigDecimalOrNull()
-                        if (price != null) latestBasePrices[c.getLong(0)] = price
-                    }
-                }
-                // Fallback for items whose current master price is zero and have no item_price row:
-                // use the most recent positive base-currency selling price recorded on an invoice line.
-                source.rawQuery("""SELECT bt.item_id, bt.sls_u_price
-                    FROM bill_transactions bt
-                    JOIN bills b ON b.id=bt.bill_id
-                    JOIN (
-                        SELECT bt2.item_id, MAX(b2.date_ || printf('%020d', b2.id)) AS latest_key
-                        FROM bill_transactions bt2 JOIN bills b2 ON b2.id=bt2.bill_id
-                        WHERE bt2.curr_id=0 AND bt2.sls_u_price > 0
-                        GROUP BY bt2.item_id
-                    ) x ON x.item_id=bt.item_id AND (b.date_ || printf('%020d', b.id))=x.latest_key
-                    WHERE bt.curr_id=0 AND bt.sls_u_price > 0""", null).use { c ->
-                    while (c.moveToNext()) {
-                        val itemId = c.getLong(0)
-                        val price = c.getString(1)?.toBigDecimalOrNull()
-                        if (price != null) latestBasePrices.putIfAbsent(itemId, price)
-                    }
-                }
-
-                // Final fallback: historical invoice prices for legacy items not priced in the
-                // current period. Current prices always win because this uses putIfAbsent.
-                source.rawQuery("""SELECT bt.item_id, bt.sls_u_price
-                    FROM bill_transactions_h bt
-                    JOIN bills_h b ON b.id=bt.bill_id
-                    JOIN (
-                        SELECT bt2.item_id, MAX(b2.date_ || printf('%020d', b2.id)) AS latest_key
-                        FROM bill_transactions_h bt2 JOIN bills_h b2 ON b2.id=bt2.bill_id
-                        WHERE bt2.curr_id=0 AND bt2.sls_u_price > 0
-                        GROUP BY bt2.item_id
-                    ) x ON x.item_id=bt.item_id AND (b.date_ || printf('%020d', b.id))=x.latest_key
-                    WHERE bt.curr_id=0 AND bt.sls_u_price > 0""", null).use { c ->
+                // Select the newest positive base-currency price across the price ledger and both
+                // current and historical invoice lines, rather than letting a stale price win.
+                source.rawQuery("""SELECT item_id,price FROM (
+                    SELECT p.item_id AS item_id, p.SLS_U_PRICE AS price, p.date_ AS price_date, 3 AS priority
+                    FROM item_price p WHERE p.curr_id=0 AND p.SLS_U_PRICE>0
+                    UNION ALL
+                    SELECT bt.item_id AS item_id, bt.sls_u_price AS price, b.date_ AS price_date, 2 AS priority
+                    FROM bill_transactions bt JOIN bills b ON b.id=bt.bill_id
+                    WHERE bt.curr_id=0 AND bt.sls_u_price>0
+                    UNION ALL
+                    SELECT bt.item_id AS item_id, bt.sls_u_price AS price, b.date_ AS price_date, 1 AS priority
+                    FROM bill_transactions_h bt JOIN bills_h b ON b.id=bt.bill_id
+                    WHERE bt.curr_id=0 AND bt.sls_u_price>0
+                ) ORDER BY price_date DESC, priority DESC""", null).use { c ->
                     while (c.moveToNext()) {
                         val itemId = c.getLong(0)
                         val price = c.getString(1)?.toBigDecimalOrNull()
