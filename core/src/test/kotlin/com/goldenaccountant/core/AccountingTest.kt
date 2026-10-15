@@ -79,6 +79,10 @@ class AccountingTest {
         assertFailsWith<IllegalArgumentException> { JournalLine(1, bd("1"), bd("1")) }
     }
 
+    @Test fun zeroValueJournalLineIsRejected() {
+        assertFailsWith<IllegalArgumentException> { JournalLine(1) }
+    }
+
     @Test fun microRoundTrip() {
         assertEquals(bd("12.3456"), bd("12.3456").toMicro().fromMicro())
     }
