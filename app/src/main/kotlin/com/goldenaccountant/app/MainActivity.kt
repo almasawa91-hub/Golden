@@ -224,7 +224,7 @@ class MainActivity : AppCompatActivity() {
                         fun collisionCount(sourceTable: String, targetTable: String): Long {
                             if (sourceTable !in tables) return 0L
                             val existingNames = mutableSetOf<String>()
-                            target.rawQuery("SELECT name FROM `$targetTable`", null).use { c ->
+                            target.query("SELECT name FROM `$targetTable`").use { c ->
                                 while (c.moveToNext()) {
                                     val name = c.getString(0)?.trim().orEmpty()
                                     if (name.isNotEmpty()) existingNames += name.lowercase(Locale.ROOT)
