@@ -173,6 +173,7 @@ object LegacyDatabaseImporter {
                     Triple("الإيرادات", 411L, "#16A34A"), Triple("أخرى", 124L, "#64748B"),
                 )
                 categorySpecs.forEachIndexed { index, spec -> ensureCategory(target, spec.first, spec.second, spec.third, index) }
+                target.execSQL("UPDATE account_categories SET enabled=0 WHERE name='الصناديق والبنوك'")
 
                 source.rawQuery("SELECT id,name,gsm,acc_p_id,cus_type_id FROM customers ORDER BY id", null).use { c ->
                     while (c.moveToNext()) {
@@ -392,8 +393,9 @@ object LegacyDatabaseImporter {
 
 
                 // Move legacy bills into Golden's operational invoice and journal tables.
-                invoicesAdded += importBills(source, target, "bills", "bill_transactions", baseCurrencyId, latestRate, warehouseId)
+                // Import history first so current-period invoices appear first in the operational list.
                 invoicesAdded += importBills(source, target, "bills_h", "bill_transactions_h", baseCurrencyId, latestRate, warehouseId)
+                invoicesAdded += importBills(source, target, "bills", "bill_transactions", baseCurrencyId, latestRate, warehouseId)
 
                 // Only balanced, fully-mapped receipt/payment groups are posted.
                 val currentVoucherResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate)
