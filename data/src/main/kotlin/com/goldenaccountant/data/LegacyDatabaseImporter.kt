@@ -264,6 +264,13 @@ object LegacyDatabaseImporter {
                         val barcode = c.getString(10)?.trim()?.takeIf { it.isNotEmpty() }
                         val existingByBarcode = barcode?.let { scalarNullable(target, "SELECT id FROM items WHERE barcode = ? LIMIT 1", arrayOf(it)) }
                         val existing = existingByName ?: existingByBarcode
+                        val typeId = if (c.isNull(2)) -1L else c.getLong(2)
+                        val unitId = if (c.isNull(9)) -1L else c.getLong(9)
+                        val category = typeNames[typeId]?.takeIf { it.isNotBlank() } ?: "عام"
+                        val unit = unitNames[unitId]?.takeIf { it.isNotBlank() } ?: "حبة"
+                        val currencyId = if (c.isNull(6)) baseCurrencyId else c.getLong(6)
+                        val sourcePrice = latestBasePrices[sourceId] ?: (c.getString(5)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+                        val price = if (currencyId == baseCurrencyId) toMicro(sourcePrice) else 0L
                         val expiry = c.getString(7)?.trim()?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
                         val notes = buildString {
                             c.getString(8)?.trim()?.takeIf { it.isNotEmpty() }?.let { append(it) }
@@ -298,20 +305,6 @@ object LegacyDatabaseImporter {
                                 stockBalancesAdded++
                             }
                             continue
-                        }
-                        val unitId = if (c.isNull(9)) -1L else c.getLong(9)
-                        val category = typeNames[typeId]?.takeIf { it.isNotBlank() } ?: "عام"
-                        val unit = unitNames[unitId]?.takeIf { it.isNotBlank() } ?: "حبة"
-                        val currencyId = if (c.isNull(6)) baseCurrencyId else c.getLong(6)
-                        val sourcePrice = latestBasePrices[sourceId] ?: (c.getString(5)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                        val price = if (currencyId == baseCurrencyId) toMicro(sourcePrice) else 0L
-                        val expiry = c.getString(7)?.trim()?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
-                        val notes = buildString {
-                            c.getString(8)?.trim()?.takeIf { it.isNotEmpty() }?.let { append(it) }
-                            if (currencyId != baseCurrencyId && sourcePrice.signum() != 0) {
-                                if (isNotEmpty()) append(" | ")
-                                append("السعر الأصلي: ").append(sourcePrice.toPlainString()).append(" (عملة المصدر رقم ").append(currencyId).append(")")
-                            }
                         }
                         target.execSQL(
                             "INSERT INTO items(name,barcode,isService,unit,salePriceMicro,minStockMicro,category,expiryDate,notes) VALUES(?,?,0,?,?,0,?,?,?)",
