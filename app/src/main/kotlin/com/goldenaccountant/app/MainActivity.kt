@@ -255,7 +255,7 @@ class MainActivity : AppCompatActivity() {
                             }
                             appendLine()
                             appendLine("سيُدمج دليل الحسابات، وتُربط الحسابات بتصنيفاتها، وتُحدّث الأصناف والعملات، وتُسجّل لقطة المخزون الحالية.")
-                            appendLine("ستُنقل فواتير البيع والشراء والمرتجعات إلى الفواتير التشغيلية، وستُرحّل مجموعات سندات القبض والصرف المتوازنة والمكتملة الربط فقط.")
+                            appendLine("ستُنقل فواتير البيع والشراء والمرتجعات، وسندات القبض والصرف، والحركات المباشرة القابلة للمطابقة إلى الجداول التشغيلية والقيود المتوازنة.")
                             appendLine("أي حركة غير مرتبطة بفواتير أو سندات قابلة للمطابقة، وأي فرق بين إجمالي الفاتورة وتفاصيلها، سيبقى محفوظاً للمراجعة ولن يُرحّل بتخمين.")
                             appendLine("لن تُحذف بيانات Golden الحالية، والاستيراد قابل لإعادة المحاولة دون تكرار الفواتير أو سندات المخزون المرحّلة.")
                         }
@@ -314,8 +314,10 @@ class MainActivity : AppCompatActivity() {
                         appendLine("عملات جديدة: ${result.currenciesAdded}")
                         appendLine("أرصدة مخزون حالية أُضيفت: ${result.stockBalancesAdded}")
                         appendLine("فواتير تشغيلية تم ترحيلها: ${result.invoicesAdded}")
-                        appendLine("مجموعات سندات قبض/صرف متوازنة تم ترحيلها: ${result.voucherGroupsPosted}")
-                        appendLine("مجموعات سندات تحتاج مراجعة: ${result.voucherGroupsForReview}")
+                        appendLine("مجموعات السندات والحركات المتوازنة التي تم ترحيلها: ${result.voucherGroupsPosted}")
+                        appendLine("حركات الحسابات المباشرة التي تم ترحيلها: ${result.manualTransactionsPosted}")
+                        appendLine("مجموعات حركات تحتاج مراجعة: ${result.voucherGroupsForReview}")
+                        appendLine("حركات منفردة تحتاج مراجعة: ${result.manualTransactionsForReview}")
                         appendLine("سجلات المصدر المحفوظة: ${result.archivedRowsAdded}")
                         appendLine("سجلات كانت محفوظة سابقاً: ${result.archivedRowsAlreadyPresent}")
                         appendLine()
