@@ -39,6 +39,13 @@ object PostingEngine {
         paid: BigDecimal = ZERO,
         costOfGoods: BigDecimal = ZERO,
     ): JournalEntry {
+        require(paid.signum() >= 0) { "الدفعة لا يمكن أن تكون سالبة" }
+        require(paid <= t.total) { "الدفعة أكبر من إجمالي الفاتورة" }
+        require(costOfGoods.signum() >= 0) { "تكلفة البضاعة لا يمكن أن تكون سالبة" }
+        require(t.total.signum() >= 0 && t.net.signum() >= 0 && t.tax.signum() >= 0 && t.fees.signum() >= 0) {
+            "إجماليات الفاتورة لا يمكن أن تكون سالبة"
+        }
+        require(isCash || partyAccountId > 0) { "يجب تحديد حساب الطرف في الفاتورة الآجلة" }
         val out = ArrayList<JournalLine>()
         val party = if (isCash) ids.cash else partyAccountId
         fun add(account: Long, v: BigDecimal, debit: Boolean) {
