@@ -223,10 +223,21 @@ class MainActivity : AppCompatActivity() {
                         val target = app.db.openHelper.readableDatabase
                         fun collisionCount(sourceTable: String, targetTable: String): Long {
                             if (sourceTable !in tables) return 0L
-                            return target.rawQuery(
-                                "SELECT COUNT(*) FROM `$sourceTable` s JOIN `$targetTable` t ON TRIM(s.name) = TRIM(t.name) COLLATE NOCASE WHERE s.name IS NOT NULL AND TRIM(s.name) <> ''",
-                                null,
-                            ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+                            val existingNames = mutableSetOf<String>()
+                            target.rawQuery("SELECT name FROM `$targetTable`", null).use { c ->
+                                while (c.moveToNext()) {
+                                    val name = c.getString(0)?.trim().orEmpty()
+                                    if (name.isNotEmpty()) existingNames += name.lowercase(Locale.ROOT)
+                                }
+                            }
+                            var matches = 0L
+                            src.rawQuery("SELECT name FROM `$sourceTable` WHERE name IS NOT NULL AND TRIM(name) <> ''", null).use { c ->
+                                while (c.moveToNext()) {
+                                    val name = c.getString(0)?.trim().orEmpty().lowercase(Locale.ROOT)
+                                    if (name.isNotEmpty() && name in existingNames) matches++
+                                }
+                            }
+                            return matches
                         }
                         val customerCollisions = collisionCount("customers", "accounts")
                         val itemCollisions = collisionCount("items", "items")
