@@ -167,7 +167,7 @@ object LegacyDatabaseImporter {
                     Triple("عملاء آجل", 123L, "#1D4ED8"), Triple("عملاء جملة", 123L, "#3B82F6"),
                     Triple("عملاء تجزئة", 123L, "#60A5FA"), Triple("الموردون", 221L, "#7C3AED"),
                     Triple("الصناديق", 121L, "#059669"), Triple("البنوك", 122L, "#0891B2"),
-                    Triple("الأصول", 12L, "#D97706"), Triple("الأصول الثابتة", 11L, "#B45309"),
+                    Triple("الأصول", 1L, "#D97706"), Triple("الأصول الثابتة", 11L, "#B45309"),
                     Triple("الأصول المتداولة", 12L, "#F59E0B"), Triple("الالتزامات", 22L, "#DC2626"),
                     Triple("حقوق الملكية", 21L, "#9333EA"), Triple("المصروفات", 322L, "#EA580C"),
                     Triple("الإيرادات", 411L, "#16A34A"), Triple("أخرى", 124L, "#64748B"),
@@ -292,13 +292,15 @@ object LegacyDatabaseImporter {
                         val existingById = scalarNullable(target, "SELECT id FROM currencies WHERE id = ? LIMIT 1", arrayOf(id))
                         val existingByName = scalarNullable(target, "SELECT id FROM currencies WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
                         val existing = existingById ?: existingByName
+                        val rate = if (id == baseCurrencyId) BigDecimal.ONE else latestRate[id]
+                        val rateMicro = rate?.movePointRight(4)?.setScale(0, RoundingMode.HALF_UP)?.longValueExact() ?: 0L
                         if (existing != null) {
+                            target.execSQL(
+                                "UPDATE currencies SET name=?,code=?,rateMicro=CASE WHEN ?>0 THEN ? ELSE rateMicro END WHERE id=?",
+                                arrayOf(name, code, rateMicro, rateMicro, existing),
+                            )
                             putMap(target, "currency", id.toString(), "currencies", existing, "MATCHED_EXISTING")
                         } else {
-                            val rate = if (id == baseCurrencyId) BigDecimal.ONE else latestRate[id]
-                            // A missing exchange rate is recorded as 1 only for the base currency.
-                            // Unknown foreign rates are kept as 0 and remain visible in the archive.
-                            val rateMicro = rate?.movePointRight(4)?.setScale(0, RoundingMode.HALF_UP)?.longValueExact() ?: 0L
                             target.execSQL("INSERT INTO currencies(id,name,code,rateMicro) VALUES(?,?,?,?)", arrayOf(id, name, code, rateMicro))
                             putMap(target, "currency", id.toString(), "currencies", id, "INSERTED")
                             currenciesAdded++
@@ -701,7 +703,8 @@ object LegacyDatabaseImporter {
             122L -> "البنوك"
             221L -> "الموردون"
             111L, 11L, 13L -> "الأصول الثابتة"
-            1L, 12L, 125L, 127L, 128L, 129L -> "الأصول"
+            1L, 125L, 127L, 128L, 129L -> "الأصول"
+            12L -> "الأصول المتداولة"
             21L, 211L, 212L, 213L, 214L -> "حقوق الملكية"
             2L -> "الالتزامات وحقوق الملكية"
             22L, 23L, 222L, 223L, 224L, 225L -> "الالتزامات"
