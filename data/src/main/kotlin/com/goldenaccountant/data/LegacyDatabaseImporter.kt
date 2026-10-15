@@ -223,7 +223,7 @@ object LegacyDatabaseImporter {
                         val category = typeNames[typeId]?.takeIf { it.isNotBlank() } ?: "عام"
                         val unit = unitNames[unitId]?.takeIf { it.isNotBlank() } ?: "حبة"
                         val currencyId = if (c.isNull(6)) baseCurrencyId else c.getLong(6)
-                        val sourcePrice = c.getString(5)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val sourcePrice = latestBasePrices[sourceId] ?: (c.getString(5)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
                         val price = if (currencyId == baseCurrencyId) toMicro(sourcePrice) else 0L
                         val expiry = c.getString(7)?.trim()?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
                         val notes = buildString {
@@ -241,9 +241,9 @@ object LegacyDatabaseImporter {
                         putMap(target, "items", sourceId.toString(), "items", targetId, "INSERTED")
                         itemsAdded++
 
-                        val qty = c.getString(4)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val qty = latestStock[sourceId]?.first ?: (c.getString(4)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
                         if (qty.signum() != 0) {
-                            val cost = c.getString(11)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                            val cost = latestStock[sourceId]?.second ?: (c.getString(11)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
                             val qtyMicro = toMicro(qty)
                             val costMicro = if (cost.signum() >= 0) toMicro(cost) else 0L
                             target.execSQL(
