@@ -454,7 +454,7 @@ object LegacyDatabaseImporter {
                     "SELECT targetId FROM legacy_import_map WHERE sourceTable='customers' AND sourceId=? AND targetTable='accounts'",
                     arrayOf(sourcePartyId.toString())) else scalarNullable(target,
                     "SELECT id FROM accounts WHERE id=? LIMIT 1", arrayOf(sourcePartyId))
-                val partyAccountId = mappedParty ?: if (isCash) -3L else ensureLegacySuspenseAccount(target)
+                val partyAccountId = if (isCash) mappedParty ?: -3L else mappedParty?.takeIf { it > 0L } ?: ensureLegacySuspenseAccount(target)
                 val partyName = if (sourcePartyId > 0L) {
                     source.rawQuery("SELECT name FROM customers WHERE id=? LIMIT 1", arrayOf(sourcePartyId.toString())).use { c ->
                         if (c.moveToFirst()) c.getString(0)?.trim().orEmpty() else ""
@@ -506,10 +506,7 @@ object LegacyDatabaseImporter {
                 }
 
                 if (total.signum() > 0) {
-                    val hasCostLedger = source.rawQuery(
-                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='items_cost_calc'", null
-                    ).use { it.moveToFirst() && it.getLong(0) > 0L }
-                    val costOfGoods = if (kind == InvoiceKind.SALE && hasCostLedger) {
+                    val costOfGoods = if (kind == InvoiceKind.SALE && billTable == "bills") {
                         val costExpr = if (isReturn) "SUM(i_q*n_u)" else "SUM(o_q*n_u)"
                         source.rawQuery("SELECT COALESCE($costExpr,0) FROM items_cost_calc WHERE bill_id=?", arrayOf(sourceId.toString())).use { c ->
                             if (c.moveToFirst()) (c.getString(0)?.toBigDecimalOrNull() ?: BigDecimal.ZERO).max(BigDecimal.ZERO) else BigDecimal.ZERO
