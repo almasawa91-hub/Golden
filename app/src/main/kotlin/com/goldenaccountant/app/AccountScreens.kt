@@ -48,7 +48,9 @@ class AccountsScreen : ListScreen("الحسابات", listOf("الحساب", "ا
         val category = categoryId
         val selectedIds = category?.let { a.app.db.accountCategories().accountIdsForCategory(it).toSet() }
         return balances.filter { selectedIds == null || it.account.id in selectedIds }.map { b ->
-            val type = ChartOfAccounts.groups.firstOrNull { it.id == b.account.groupId }?.name ?: ""
+            val type = a.app.db.openHelper.readableDatabase.query(
+                "SELECT name FROM account_groups WHERE id = ? LIMIT 1", arrayOf(b.account.groupId.toString())
+            ).use { c -> if (c.moveToFirst()) c.getString(0) else "غير مصنف" }
             Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
         }
     }
@@ -56,9 +58,13 @@ class AccountsScreen : ListScreen("الحسابات", listOf("الحساب", "ا
 
 
 class StatementAccountPickerScreen : ListScreen("اختيار حساب للكشف", listOf("الحساب", "النوع", "الرصيد")) {
-    override suspend fun load(a: MainActivity): List<Row> = a.app.accounting.balances().map { b ->
-        val type = ChartOfAccounts.groups.firstOrNull { it.id == b.account.groupId }?.name ?: ""
-        Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
+    override suspend fun load(a: MainActivity): List<Row> {
+        return a.app.accounting.balances().map { b ->
+            val type = a.app.db.openHelper.readableDatabase.query(
+                "SELECT name FROM account_groups WHERE id = ? LIMIT 1", arrayOf(b.account.groupId.toString())
+            ).use { c -> if (c.moveToFirst()) c.getString(0) else "غير مصنف" }
+            Row(listOf(b.account.name, type, fmt(b.balance))) { a.push(StatementScreen(b.account.id)) }
+        }
     }
 }
 
@@ -82,10 +88,18 @@ class StatementScreen(private val accountId: Long) : ListScreen("كشف حساب
 
 class ChartScreen : ListScreen("الدليل المحاسبي", listOf("المجموعة", "الرقم", "الأب")) {
     override suspend fun load(a: MainActivity): List<Row> {
-        val byId = ChartOfAccounts.groups.associateBy { it.id }
-        fun depth(id: Long): Int = byId[id]?.let { g -> if (g.parentId == 0L) 0 else 1 + depth(g.parentId) } ?: 0
-        return ChartOfAccounts.groups.sortedBy { it.id.toString().padEnd(4, 48.toChar()) }.map {
+        val groups = a.app.db.openHelper.readableDatabase.query("SELECT id,name,parentId FROM account_groups ORDER BY id").use { c ->
+            buildList { while (c.moveToNext()) add(ChartRow(c.getLong(0), c.getString(1), c.getLong(2))) }
+        }
+        val byId = groups.associateBy { it.id }
+        fun depth(id: Long, seen: Set<Long> = emptySet()): Int {
+            if (id in seen) return 0
+            val group = byId[id] ?: return 0
+            return if (group.parentId == 0L) 0 else 1 + depth(group.parentId, seen + id)
+        }
+        return groups.sortedBy { it.id.toString().padEnd(6, 48.toChar()) }.map {
             Row(listOf("  ".repeat(depth(it.id)) + it.name, it.id.toString(), byId[it.parentId]?.name ?: "رئيسي"))
         }
     }
+    private data class ChartRow(val id: Long, val name: String, val parentId: Long)
 }

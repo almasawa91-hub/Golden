@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.goldenaccountant.data.AppDatabase
+import com.goldenaccountant.data.LegacyDatabaseImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,6 +65,10 @@ class MainActivity : AppCompatActivity() {
     private val restoreLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) importBackup(uri) }
+
+    private val legacyImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) previewLegacyImport(uri) }
 
     private data class PdfPayload(
         val title: String,
@@ -158,6 +163,179 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("اختيار النسخة") { _, _ -> restoreLauncher.launch(arrayOf("*/*")) }
             .setNegativeButton("إلغاء", null)
             .show()
+    }
+
+
+    /** معاينة آمنة لقاعدة محاسب سوفت؛ لا تعدّل قاعدة المصدر أو قاعدة Golden. */
+    fun chooseLegacyImportPreview() {
+        if (!can("backup")) return toast("لا تملك صلاحية استيراد البيانات")
+        legacyImportLauncher.launch(arrayOf("*/*"))
+    }
+
+    private fun previewLegacyImport(source: Uri) {
+        lifecycleScope.launch {
+            val incoming = File(cacheDir, "legacy-import-${System.currentTimeMillis()}.db")
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    contentResolver.openInputStream(source)?.use { input ->
+                        incoming.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw IllegalStateException("تعذر قراءة الملف المحدد")
+                    require(incoming.isFile && incoming.length() > 0L) { "الملف المحدد فارغ" }
+                    val src = SQLiteDatabase.openDatabase(incoming.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                    try {
+                        val integrity = src.rawQuery("PRAGMA integrity_check", null).use { c ->
+                            if (c.moveToFirst()) c.getString(0) else "لا توجد نتيجة"
+                        }
+                        require(integrity == "ok") { "فشل فحص سلامة SQLite: $integrity" }
+                        val tables = mutableSetOf<String>()
+                        src.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", null).use { c ->
+                            while (c.moveToNext()) tables += c.getString(0)
+                        }
+                        require(listOf("account_tree", "customers", "transactions", "transactions_h", "bills",
+                            "bill_transactions", "items", "currency", "currency_price", "units", "item_type").all { it in tables }) {
+                            "الملف لا يبدو قاعدة محاسب سوفت مكتملة؛ تأكد من اختيار ملف SQLite الأصلي."
+                        }
+                        val expected = listOf(
+                            "account_tree" to "مجموعات الحسابات",
+                            "customers" to "الحسابات والعملاء",
+                            "transactions" to "الحركات الحالية",
+                            "transactions_h" to "الحركات التاريخية",
+                            "bills" to "الفواتير",
+                            "bill_transactions" to "تفاصيل الفواتير",
+                            "items" to "الأصناف",
+                            "currency" to "العملات",
+                            "currency_price" to "أسعار العملات",
+                            "units" to "وحدات القياس",
+                            "item_type" to "تصنيفات الأصناف",
+                        )
+                        val counts = expected.map { (table, label) ->
+                            val n = src.rawQuery("SELECT COUNT(*) FROM `$table`", null).use { c ->
+                                if (c.moveToFirst()) c.getLong(0) else 0L
+                            }
+                            "$label: $n"
+                        }
+                        val target = app.db.openHelper.readableDatabase
+                        fun collisions(sourceTable: String, targetTable: String): Long {
+                            val existingNames = mutableSetOf<String>()
+                            target.query("SELECT name FROM `$targetTable`").use { c ->
+                                while (c.moveToNext()) {
+                                    c.getString(0)?.trim()?.takeIf { it.isNotEmpty() }?.let { existingNames += it.lowercase(Locale.ROOT) }
+                                }
+                            }
+                            var found = 0L
+                            src.rawQuery("SELECT name FROM `$sourceTable` WHERE name IS NOT NULL AND TRIM(name) <> ''", null).use { c ->
+                                while (c.moveToNext()) {
+                                    val n = c.getString(0)?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                                    if (n.isNotEmpty() && n in existingNames) found++
+                                }
+                            }
+                            return found
+                        }
+                        val fkByTable = mutableMapOf<String, Int>()
+                        src.rawQuery("PRAGMA foreign_key_check", null).use { c ->
+                            while (c.moveToNext()) {
+                                val table = c.getString(0) ?: "غير معروف"
+                                fkByTable[table] = (fkByTable[table] ?: 0) + 1
+                            }
+                        }
+                        buildString {
+                            appendLine("معاينة قاعدة محاسب سوفت")
+                            appendLine("حجم الملف: ${incoming.length()} بايت")
+                            appendLine("سلامة SQLite: سليمة")
+                            appendLine()
+                            counts.forEach { appendLine(it) }
+                            appendLine()
+                            appendLine("مطابقات أسماء (تُربط بالسجلات الحالية بدل تكرارها):")
+                            appendLine("الحسابات: ${collisions("customers", "accounts")}")
+                            appendLine("الأصناف: ${collisions("items", "items")}")
+                            appendLine()
+                            appendLine("مخالفات العلاقات في المصدر: ${fkByTable.values.sum()}")
+                            fkByTable.entries.sortedByDescending { it.value }.take(6).forEach {
+                                appendLine("• ${it.key}: ${it.value}")
+                            }
+                            appendLine()
+                            appendLine("سيُدمج دليل الحسابات، وتُربط الحسابات بتصنيفاتها، وتُحدّث الأصناف والعملات، وتُسجّل لقطة المخزون الحالية.")
+                            appendLine("ستُنقل فواتير البيع والشراء والمرتجعات، وسندات القبض والصرف، والحركات المباشرة القابلة للمطابقة إلى الجداول التشغيلية والقيود المتوازنة.")
+                            appendLine("أي حركة غير مرتبطة بفواتير أو سندات قابلة للمطابقة، وأي فرق بين إجمالي الفاتورة وتفاصيلها، سيبقى محفوظاً للمراجعة ولن يُرحّل بتخمين.")
+                            appendLine("لن تُحذف بيانات Golden الحالية، والاستيراد قابل لإعادة المحاولة دون تكرار الفواتير أو سندات المخزون المرحّلة.")
+                        }
+                    } finally {
+                        src.close()
+                    }
+                }
+                var importStarted = false
+                val dialog = androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("مراجعة الدمج — محاسب سوفت")
+                    .setMessage(report)
+                    .setNegativeButton("إلغاء", null)
+                    .setPositiveButton("بدء الدمج الآمن") { _, _ ->
+                        importStarted = true
+                        runLegacyImport(incoming)
+                    }
+                    .create()
+                dialog.setOnDismissListener { if (!importStarted) incoming.delete() }
+                dialog.show()
+            } catch (e: Exception) {
+                incoming.delete()
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("تعذر فحص الملف")
+                    .setMessage(e.message ?: "خطأ غير معروف")
+                    .setPositiveButton("إغلاق", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun runLegacyImport(incoming: File) {
+        if (!can("backup")) {
+            incoming.delete()
+            toast("لا تملك صلاحية استيراد البيانات")
+            return
+        }
+        lifecycleScope.launch {
+            val progress = androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle("جارٍ دمج البيانات")
+                .setMessage("يتم حفظ البيانات القديمة ومطابقة الحسابات والأصناف. لا تغلق التطبيق.")
+                .setCancelable(false)
+                .create()
+            progress.show()
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    LegacyDatabaseImporter.import(incoming, app.db.openHelper.writableDatabase)
+                }
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("اكتمل الدمج الآمن")
+                    .setMessage(buildString {
+                        appendLine("مجموعات حسابات جديدة: ${result.groupsAdded}")
+                        appendLine("حسابات جديدة: ${result.accountsAdded}")
+                        appendLine("حسابات رُبطت بسجلات موجودة: ${result.accountsMatched}")
+                        appendLine("أصناف جديدة: ${result.itemsAdded}")
+                        appendLine("أصناف مكررة جرى ربطها: ${result.itemsMatched}")
+                        appendLine("عملات جديدة: ${result.currenciesAdded}")
+                        appendLine("أرصدة مخزون حالية أُضيفت: ${result.stockBalancesAdded}")
+                        appendLine("فواتير تشغيلية تم ترحيلها: ${result.invoicesAdded}")
+                        appendLine("مجموعات السندات والحركات المتوازنة التي تم ترحيلها: ${result.voucherGroupsPosted}")
+                        appendLine("حركات الحسابات المباشرة التي تم ترحيلها: ${result.manualTransactionsPosted}")
+                        appendLine("مجموعات حركات تحتاج مراجعة: ${result.voucherGroupsForReview}")
+                        appendLine("حركات منفردة تحتاج مراجعة: ${result.manualTransactionsForReview}")
+                        appendLine("سجلات المصدر المحفوظة: ${result.archivedRowsAdded}")
+                        appendLine("سجلات كانت محفوظة سابقاً: ${result.archivedRowsAlreadyPresent}")
+                        appendLine()
+                        appendLine("تنبيه: أي سند غير متوازن أو يفتقد ربط حساب بقي في الأرشيف للمراجعة. بعض الفواتير القديمة قد تحمل ملاحظة إذا كانت تفاصيلها لا تطابق إجمالي رأس الفاتورة.")
+                    })
+                    .setPositiveButton("حسنًا") { _, _ -> refresh() }
+                    .show()
+            } catch (e: Exception) {
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("فشل الدمج — لم تُعتمد العملية")
+                    .setMessage(e.message ?: "خطأ غير معروف")
+                    .setPositiveButton("إغلاق", null)
+                    .show()
+            } finally {
+                progress.dismiss()
+                incoming.delete()
+            }
+        }
     }
 
     private fun exportBackup(destination: Uri) {
