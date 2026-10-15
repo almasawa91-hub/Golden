@@ -592,9 +592,9 @@ object LegacyDatabaseImporter {
             val sourceId: String, val accountId: Long, val debitMicro: Long, val creditMicro: Long,
             val date: String, val memo: String,
         )
-        val groups = linkedMapOf<Pair<Long, Long>, MutableList<VoucherLine>>()
-        val rawRows = linkedMapOf<Pair<Long, Long>, MutableList<Triple<String, Long, Long>>>()
-        val zeroRows = linkedMapOf<Pair<Long, Long>, MutableList<Triple<String, Long, Long>>>()
+        val groups = linkedMapOf<Triple<Long, Long, String>, MutableList<VoucherLine>>()
+        val rawRows = linkedMapOf<Triple<Long, Long, String>, MutableList<Triple<String, Long, Long>>>()
+        val zeroRows = linkedMapOf<Triple<Long, Long, String>, MutableList<Triple<String, Long, Long>>>()
         val counterpartBySource = mutableMapOf<String, Long?>()
         source.rawQuery(
             """SELECT id,cus_id,"in","out",date_,remarks,p_id,tr_type,curr_id,curr_price,t_cus_id
@@ -604,9 +604,9 @@ object LegacyDatabaseImporter {
             while (c.moveToNext()) {
                 val pId = c.getLong(6)
                 val type = c.getLong(7)
-                val key = pId to type
                 val sourceId = c.getString(0)
                 val date = normalizeLegacyDate(c.getString(4)) ?: ""
+                val key = Triple(pId, type, date)
                 val memo = c.getString(5)?.trim().orEmpty()
                 val sourceAccountId = c.getLong(1)
                 val direction = c.getString(2)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
@@ -643,8 +643,9 @@ object LegacyDatabaseImporter {
             val type = key.second
             val refType = "legacy_voucher_${table}_$type"
             val allRows = sourceRows + zeroRows[key].orEmpty()
+            val groupRefId = sourceRows.firstOrNull()?.first?.toLongOrNull() ?: pId
             val existingEntry = scalarNullable(target,
-                "SELECT id FROM journal_entries WHERE refType=? AND refId=? LIMIT 1", arrayOf(refType, pId))
+                "SELECT id FROM journal_entries WHERE refType=? AND refId=? LIMIT 1", arrayOf(refType, groupRefId))
             if (existingEntry != null) {
                 allRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", existingEntry, "POSTED_VOUCHER") }
                 return@forEach
@@ -674,7 +675,7 @@ object LegacyDatabaseImporter {
             val memo = lines.firstOrNull { it.memo.isNotBlank() }?.memo ?: "سند قديم رقم $pId"
             target.execSQL(
                 "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
-                arrayOf(date, "ترحيل محاسب سوفت • $memo", refType, pId, System.currentTimeMillis()),
+                arrayOf(date, "ترحيل محاسب سوفت • $memo", refType, groupRefId, System.currentTimeMillis()),
             )
             val entryId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
             lines.forEach { line ->
@@ -703,6 +704,7 @@ object LegacyDatabaseImporter {
             """SELECT id,cus_id,"in","out",date_,remarks,t_cus_id,curr_id,curr_price
                FROM `$table`
                WHERE tr_type=0 AND (bill_id=0 OR (bill_id<0 AND p_id=0))
+                 AND NOT (remarks LIKE '%رصيد افتتاحي%' AND date_='01-01-2026')
                ORDER BY id""",
             null,
         ).use { c ->
