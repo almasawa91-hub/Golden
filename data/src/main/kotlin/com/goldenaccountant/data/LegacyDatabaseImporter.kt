@@ -32,7 +32,7 @@ object LegacyDatabaseImporter {
 
     private val archiveTables = listOf(
         "account_tree", "customers", "transactions", "transactions_h", "bills",
-        "bill_transactions", "items", "currency", "currency_price", "units", "item_type",
+        "bill_transactions", "items", "currency", "currency_price", "units", "item_type", "items_cost_calc", "items_closing_balance", "item_price", "item_price_history", "items_h", "bill_transactions_h", "bills_h",
     )
 
     fun import(sourceFile: File, target: SupportSQLiteDatabase): Result {
