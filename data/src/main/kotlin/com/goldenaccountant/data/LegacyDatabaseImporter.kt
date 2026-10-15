@@ -131,22 +131,6 @@ object LegacyDatabaseImporter {
                     }
                     if (categoryId != null) categoryByGroup[groupId] = categoryId
                 }
-                target.query("SELECT id,groupId FROM accounts").use { c ->
-                    while (c.moveToNext()) {
-                        val accountId = c.getLong(0)
-                        var groupId = c.getLong(1)
-                        val visited = mutableSetOf<Long>()
-                        while (groupId != 0L && visited.add(groupId)) {
-                            val categoryId = categoryByGroup[groupId]
-                            if (categoryId != null) {
-                                target.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)",
-                                    arrayOf(accountId, categoryId))
-                            }
-                            groupId = parentByGroup[groupId] ?: 0L
-                        }
-                    }
-                }
-
                 // Customer rows include both contact accounts and some legacy/system rows.
                 source.rawQuery("SELECT id,name,gsm,acc_p_id,cus_type_id FROM customers ORDER BY id", null).use { c ->
                     while (c.moveToNext()) {
@@ -172,6 +156,22 @@ object LegacyDatabaseImporter {
                         val targetId = scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
                         putMap(target, "customers", sourceId.toString(), "accounts", targetId, "INSERTED")
                         accountsAdded++
+                    }
+                }
+
+                target.query("SELECT id,groupId FROM accounts").use { c ->
+                    while (c.moveToNext()) {
+                        val accountId = c.getLong(0)
+                        var groupId = c.getLong(1)
+                        val visited = mutableSetOf<Long>()
+                        while (groupId != 0L && visited.add(groupId)) {
+                            val categoryId = categoryByGroup[groupId]
+                            if (categoryId != null) {
+                                target.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)",
+                                    arrayOf(accountId, categoryId))
+                            }
+                            groupId = parentByGroup[groupId] ?: 0L
+                        }
                     }
                 }
 
