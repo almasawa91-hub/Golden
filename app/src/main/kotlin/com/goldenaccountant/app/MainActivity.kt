@@ -65,6 +65,10 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) importBackup(uri) }
 
+    private val legacyImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) previewLegacyImport(uri) }
+
     private data class PdfPayload(
         val title: String,
         val columns: List<String>,
@@ -158,6 +162,111 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("اختيار النسخة") { _, _ -> restoreLauncher.launch(arrayOf("*/*")) }
             .setNegativeButton("إلغاء", null)
             .show()
+    }
+
+
+    /** معاينة آمنة لقاعدة محاسب سوفت؛ لا تعدّل قاعدة المصدر أو قاعدة Golden. */
+    fun chooseLegacyImportPreview() {
+        if (!can("backup")) return toast("لا تملك صلاحية استيراد البيانات")
+        legacyImportLauncher.launch(arrayOf("*/*"))
+    }
+
+    private fun previewLegacyImport(source: Uri) {
+        lifecycleScope.launch {
+            val incoming = File(cacheDir, "legacy-preview-${System.currentTimeMillis()}.db")
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    contentResolver.openInputStream(source)?.use { input ->
+                        incoming.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw IllegalStateException("تعذر قراءة الملف المحدد")
+                    require(incoming.isFile && incoming.length() > 0L) { "الملف المحدد فارغ" }
+                    val src = SQLiteDatabase.openDatabase(incoming.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                    try {
+                        val integrity = src.rawQuery("PRAGMA integrity_check", null).use { c ->
+                            if (c.moveToFirst()) c.getString(0) else "لا توجد نتيجة"
+                        }
+                        require(integrity == "ok") { "فشل فحص سلامة SQLite: $integrity" }
+                        val tables = mutableSetOf<String>()
+                        src.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", null).use { c ->
+                            while (c.moveToNext()) tables += c.getString(0)
+                        }
+                        require("customers" in tables && "transactions" in tables && "items" in tables && "bills" in tables) {
+                            "الملف لا يبدو قاعدة محاسب سوفت المتوقعة (الجداول الأساسية غير مكتملة)"
+                        }
+                        val expected = listOf(
+                            "account_tree" to "شجرة الحسابات",
+                            "customers" to "العملاء والحسابات",
+                            "transactions" to "الحركات الحالية",
+                            "transactions_h" to "الحركات التاريخية",
+                            "bills" to "الفواتير",
+                            "bill_transactions" to "تفاصيل الفواتير",
+                            "items" to "الأصناف",
+                            "currency" to "العملات",
+                            "units" to "وحدات القياس",
+                            "item_type" to "تصنيفات الأصناف",
+                        )
+                        val counts = expected.mapNotNull { (table, label) ->
+                            if (table !in tables) null else {
+                                val n = src.rawQuery("SELECT COUNT(*) FROM `$table`", null).use { c ->
+                                    if (c.moveToFirst()) c.getLong(0) else 0L
+                                }
+                                "$label: $n"
+                            }
+                        }
+                        val fkByTable = mutableMapOf<String, Int>()
+                        src.rawQuery("PRAGMA foreign_key_check", null).use { c ->
+                            while (c.moveToNext()) {
+                                val table = c.getString(0) ?: "غير معروف"
+                                fkByTable[table] = (fkByTable[table] ?: 0) + 1
+                            }
+                        }
+                        val target = app.db.openHelper.readableDatabase
+                        fun collisionCount(sourceTable: String, targetTable: String): Long {
+                            if (sourceTable !in tables) return 0L
+                            return target.rawQuery(
+                                "SELECT COUNT(*) FROM `$sourceTable` s JOIN `$targetTable` t ON TRIM(s.name) = TRIM(t.name) COLLATE NOCASE WHERE s.name IS NOT NULL AND TRIM(s.name) <> ''",
+                                null,
+                            ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+                        }
+                        val customerCollisions = collisionCount("customers", "accounts")
+                        val itemCollisions = collisionCount("items", "items")
+                        buildString {
+                            appendLine("نتيجة فحص قاعدة محاسب سوفت")
+                            appendLine("حجم الملف: ${incoming.length()} بايت")
+                            appendLine("سلامة SQLite: سليمة")
+                            appendLine()
+                            counts.forEach { appendLine(it) }
+                            appendLine()
+                            appendLine("مطابقات أسماء تحتاج مراجعة قبل الدمج:")
+                            appendLine("العملاء/الحسابات الموجودة مسبقاً: $customerCollisions")
+                            appendLine("الأصناف الموجودة مسبقاً: $itemCollisions")
+                            appendLine()
+                            appendLine("مخالفات العلاقات المرجعية: ${fkByTable.values.sum()}")
+                            fkByTable.entries.sortedByDescending { it.value }.take(8).forEach {
+                                appendLine("• ${it.key}: ${it.value}")
+                            }
+                            appendLine()
+                            appendLine("هذه معاينة فقط: لم تُستورد أو تُعدّل أي بيانات. يلزم تحويل الحركات والفواتير والتحقق من الأرصدة والعملات قبل اعتماد الدمج.")
+                        }
+                    } finally {
+                        src.close()
+                    }
+                }
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("معاينة الاستيراد — محاسب سوفت")
+                    .setMessage(report)
+                    .setPositiveButton("حسنًا", null)
+                    .show()
+            } catch (e: Exception) {
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("تعذر فحص الملف")
+                    .setMessage(e.message ?: "خطأ غير معروف")
+                    .setPositiveButton("إغلاق", null)
+                    .show()
+            } finally {
+                incoming.delete()
+            }
+        }
     }
 
     private fun exportBackup(destination: Uri) {
