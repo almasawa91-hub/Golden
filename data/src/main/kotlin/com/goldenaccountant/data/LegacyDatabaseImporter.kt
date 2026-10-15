@@ -137,6 +137,26 @@ object LegacyDatabaseImporter {
                 val baseCurrencyId = source.rawQuery("SELECT id FROM currency WHERE id=0 LIMIT 1", null).use { c ->
                     if (c.moveToFirst()) c.getLong(0) else 0L
                 }
+                val latestBasePrices = mutableMapOf<Long, BigDecimal>()
+                source.rawQuery("""SELECT p.item_id, p.SLS_U_PRICE FROM item_price p
+                    JOIN (SELECT item_id, MAX(date_) AS max_date FROM item_price WHERE curr_id = 0 GROUP BY item_id) x
+                    ON x.item_id=p.item_id AND x.max_date=p.date_ WHERE p.curr_id = 0""", null).use { c ->
+                    while (c.moveToNext()) {
+                        val price = c.getString(1)?.toBigDecimalOrNull()
+                        if (price != null) latestBasePrices[c.getLong(0)] = price
+                    }
+                }
+                val latestStock = mutableMapOf<Long, Pair<BigDecimal, BigDecimal>>()
+                source.rawQuery("""SELECT s.item_id, s.n_q, s.n_u FROM items_cost_calc s
+                    JOIN (SELECT item_id, MAX(date_ || printf('%020d', id2)) AS latest_key
+                          FROM items_cost_calc GROUP BY item_id) x
+                    ON x.item_id=s.item_id AND (s.date_ || printf('%020d', s.id2))=x.latest_key""", null).use { c ->
+                    while (c.moveToNext()) {
+                        val qty = c.getString(1)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val cost = c.getString(2)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        latestStock[c.getLong(0)] = qty to cost
+                    }
+                }
                 val latestRate = mutableMapOf<Long, BigDecimal>()
                 source.rawQuery("""SELECT cp.curr_id, cp.price FROM currency_price cp
                     JOIN (SELECT curr_id, MAX(f_date) AS max_date FROM currency_price GROUP BY curr_id) x
