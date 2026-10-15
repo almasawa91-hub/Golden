@@ -145,16 +145,11 @@ abstract class AppDatabase : RoomDatabase() {
                 db.accounts().insertAccounts(ChartOfAccounts.systemAccounts.map { AccountE(it.id, it.name, it.groupId, isSystem = true) })
             }
             val defaults = listOf(
-                "العملاء" to 123L,
-                "عملاء آجل" to 123L,
-                "عملاء جملة" to 123L,
-                "عملاء تجزئة" to 123L,
-                "الأمانات" to 221L,
-                "الموردون" to 221L,
-                "الصناديق والبنوك" to 121L,
-                "المصروفات" to 322L,
-                "الإيرادات" to 411L,
-                "أخرى" to null,
+                "العملاء" to 123L, "عملاء آجل" to 123L, "عملاء جملة" to 123L, "عملاء تجزئة" to 123L,
+                "العملاء (الثقه)" to 126L, "الأمانات" to 221L, "الموردون" to 221L,
+                "الصناديق" to 121L, "البنوك" to 122L, "الصناديق والبنوك" to 121L,
+                "الأصول" to 12L, "الأصول الثابتة" to 11L, "الأصول المتداولة" to 12L,
+                "الالتزامات" to 22L, "حقوق الملكية" to 21L, "المصروفات" to 322L, "الإيرادات" to 411L, "أخرى" to null,
             )
             defaults.forEachIndexed { index, (name, groupId) ->
                 if (db.accountCategories().byName(name) == null) {
