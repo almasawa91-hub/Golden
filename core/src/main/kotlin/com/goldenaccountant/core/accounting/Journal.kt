@@ -12,6 +12,7 @@ data class JournalLine(
     init {
         require(debit.signum() >= 0 && credit.signum() >= 0) { "المبالغ يجب ألا تكون سالبة" }
         require(!(debit.signum() > 0 && credit.signum() > 0)) { "السطر إما مدين أو دائن" }
+        require(debit.signum() > 0 || credit.signum() > 0) { "يجب أن يحتوي سطر القيد على مبلغ مدين أو دائن أكبر من صفر" }
     }
 }
 
