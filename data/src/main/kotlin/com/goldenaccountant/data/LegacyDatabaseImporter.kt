@@ -517,7 +517,7 @@ object LegacyDatabaseImporter {
                         val sourceItemId = lines.getLong(0)
                         val qty = (lines.getString(2)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
                             ?: lines.getString(1)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
-                        if (qty.signum() <= 0) continue
+                        if (qty.signum() <= 0 || toMicro(qty) <= 0L) continue
                         val itemId = scalarNullable(target,
                             "SELECT targetId FROM legacy_import_map WHERE sourceTable='items' AND sourceId=? AND targetTable='items'",
                             arrayOf(sourceItemId.toString())) ?: continue
@@ -627,6 +627,10 @@ object LegacyDatabaseImporter {
                 if (accountId != null && accountId != 0L && date.isNotBlank() && direction.signum() != 0 &&
                     localAmount.signum() > 0 && rate.signum() > 0) {
                     val micro = toMicro(localAmount)
+                    if (micro <= 0L) {
+                        zeroRows.getOrPut(key) { mutableListOf() }.add(row)
+                        continue
+                    }
                     groups.getOrPut(key) { mutableListOf() }.add(
                         VoucherLine(sourceId, accountId, if (direction.signum() > 0) micro else 0L,
                             if (direction.signum() < 0) micro else 0L, date, memo)
@@ -739,6 +743,11 @@ object LegacyDatabaseImporter {
                     continue
                 }
                 val micro = toMicro(localAmount)
+                if (micro <= 0L) {
+                    upsertMap(target, table, sourceKey, "legacy_import_payloads", null, "ARCHIVED_REVIEW_AMOUNT_TOO_SMALL")
+                    review++
+                    continue
+                }
                 val mainDebit = if (direction.signum() > 0) micro else 0L
                 val mainCredit = if (direction.signum() < 0) micro else 0L
                 val contraDebit = mainCredit
