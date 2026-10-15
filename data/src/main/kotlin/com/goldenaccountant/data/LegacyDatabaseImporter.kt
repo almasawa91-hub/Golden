@@ -108,7 +108,6 @@ object LegacyDatabaseImporter {
 
                 // Build a real category for each chart group. Keep cashboxes and banks separate,
                 // and add ancestor links so "الأصول" also shows all its subgroups.
-                target.execSQL("UPDATE account_categories SET name='الصناديق' WHERE name='الصناديق والبنوك' AND groupId=121")
                 val groupNames = mutableMapOf<Long, String>()
                 val parentByGroup = mutableMapOf<Long, Long>()
                 target.query("SELECT id,name,parentId FROM account_groups").use { c ->
@@ -117,7 +116,7 @@ object LegacyDatabaseImporter {
                         val sourceName = c.getString(1)?.trim().orEmpty().ifEmpty { "مجموعة $id" }
                         groupNames[id] = when (id) {
                             1L -> "الأصول"
-                            2L -> "الالتزامات"
+                            2L -> "الالتزامات وحقوق الملكية"
                             3L -> "المصروفات"
                             4L -> "الإيرادات"
                             11L, 111L, 13L -> "الأصول الثابتة"
@@ -701,7 +700,8 @@ object LegacyDatabaseImporter {
             111L, 11L, 13L -> "الأصول الثابتة"
             1L, 12L, 125L, 127L, 128L, 129L -> "الأصول"
             21L, 211L, 212L, 213L, 214L -> "حقوق الملكية"
-            2L, 22L, 23L, 222L, 223L, 224L, 225L -> "الالتزامات"
+            2L -> "الالتزامات وحقوق الملكية"
+            22L, 23L, 222L, 223L, 224L, 225L -> "الالتزامات"
             3L, 31L, 311L, 312L, 313L, 314L, 315L, 32L, 321L, 322L, 323L, 3221L, 3222L, 3223L -> "المصروفات"
             4L, 41L, 42L, 411L, 412L, 413L, 421L -> "الإيرادات"
             else -> null
