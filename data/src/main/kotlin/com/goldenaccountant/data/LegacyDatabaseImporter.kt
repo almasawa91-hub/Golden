@@ -9,6 +9,10 @@ import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.Locale
+import com.goldenaccountant.core.accounting.DEFAULT_ACCOUNTS
+import com.goldenaccountant.core.accounting.InvoiceKind
+import com.goldenaccountant.core.accounting.PostingEngine
+import com.goldenaccountant.core.accounting.Totals
 
 /**
  * Conservative importer for the legacy محاسب سوفت SQLite database.
@@ -26,6 +30,9 @@ object LegacyDatabaseImporter {
         val itemsMatched: Int,
         val currenciesAdded: Int,
         val stockBalancesAdded: Int,
+        val invoicesAdded: Int,
+        val voucherGroupsPosted: Int,
+        val voucherGroupsForReview: Int,
         val archivedRowsAdded: Long,
         val archivedRowsAlreadyPresent: Long,
     )
@@ -66,6 +73,9 @@ object LegacyDatabaseImporter {
             var itemsMatched = 0
             var currenciesAdded = 0
             var stockBalancesAdded = 0
+            var invoicesAdded = 0
+            var voucherGroupsPosted = 0
+            var voucherGroupsForReview = 0
             var archivedAdded = 0L
             var archivedExisting = 0L
 
@@ -350,6 +360,17 @@ object LegacyDatabaseImporter {
                     }
                 }
 
+
+                // Move legacy bills into Golden's operational invoice and journal tables.
+                invoicesAdded += importBills(source, target, "bills", "bill_transactions", baseCurrencyId, latestRate, warehouseId)
+                invoicesAdded += importBills(source, target, "bills_h", "bill_transactions_h", baseCurrencyId, latestRate, warehouseId)
+
+                // Only balanced, fully-mapped receipt/payment groups are posted.
+                val currentVoucherResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate)
+                val historicalVoucherResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate)
+                voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first
+                voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second
+
                 // Every imported source row is idempotently archived. Financial records are
                 // intentionally marked for reconciliation instead of inventing debit/credit sides.
                 archiveTables.forEach { table ->
@@ -379,10 +400,259 @@ object LegacyDatabaseImporter {
             } finally {
                 target.endTransaction()
             }
-            return Result(groupsAdded, accountsAdded, accountsMatched, itemsAdded, itemsMatched, currenciesAdded, stockBalancesAdded, archivedAdded, archivedExisting)
+            return Result(groupsAdded, accountsAdded, accountsMatched, itemsAdded, itemsMatched, currenciesAdded, stockBalancesAdded, invoicesAdded, voucherGroupsPosted, voucherGroupsForReview, archivedAdded, archivedExisting)
         } finally {
             source.close()
         }
+    }
+
+    private fun importBills(
+        source: SQLiteDatabase,
+        target: SupportSQLiteDatabase,
+        billTable: String,
+        lineTable: String,
+        baseCurrencyId: Long,
+        latestRate: Map<Long, BigDecimal>,
+        warehouseId: Long,
+    ): Int {
+        var imported = 0
+        source.rawQuery(
+            "SELECT id,date_,remarks,bill_no,curr_id,bill_type,tr_type,is_back,cus_id,amount,d_amount,tax_amount,paid_amount,bill_no2,curr_price FROM `$billTable` WHERE tr_type IN (1,2) ORDER BY date_,id",
+            null,
+        ).use { bills ->
+            while (bills.moveToNext()) {
+                val sourceId = bills.getLong(0)
+                val mappedDisposition = scalarNullable(target,
+                    "SELECT CASE WHEN disposition='OPERATIONAL_INVOICE' THEN 1 ELSE 0 END FROM legacy_import_map WHERE sourceTable=? AND sourceId=?",
+                    arrayOf(billTable, sourceId.toString()))
+                if (mappedDisposition == 1L) continue
+
+                val date = normalizeLegacyDate(bills.getString(1))
+                if (date == null) {
+                    upsertMap(target, billTable, sourceId.toString(), "legacy_import_payloads", null, "ARCHIVED_REVIEW_INVALID_DATE")
+                    continue
+                }
+                val memoSource = bills.getString(2)?.trim().orEmpty()
+                val billNo = bills.getString(3)?.trim().orEmpty()
+                val currencyId = bills.getLong(4)
+                val isCash = bills.getLong(5) == 1L
+                val kind = if (bills.getLong(6) == 1L) InvoiceKind.SALE else InvoiceKind.PURCHASE
+                val isReturn = bills.getLong(7) != 0L
+                val sourcePartyId = bills.getLong(8)
+                val sourceRate = if (currencyId == baseCurrencyId) BigDecimal.ONE else
+                    (bills.getString(14)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: latestRate[currencyId] ?: BigDecimal.ONE)
+                val amount = ((bills.getString(9)?.toBigDecimalOrNull() ?: BigDecimal.ZERO) * sourceRate).max(BigDecimal.ZERO)
+                val discount = ((bills.getString(10)?.toBigDecimalOrNull() ?: BigDecimal.ZERO) * sourceRate).max(BigDecimal.ZERO).min(amount)
+                val tax = ((bills.getString(11)?.toBigDecimalOrNull() ?: BigDecimal.ZERO) * sourceRate).max(BigDecimal.ZERO)
+                val net = (amount - discount).max(BigDecimal.ZERO)
+                val total = net + tax
+                val paidSource = ((bills.getString(12)?.toBigDecimalOrNull() ?: BigDecimal.ZERO) * sourceRate).max(BigDecimal.ZERO)
+                val paid = if (isCash) total else paidSource.min(total)
+                val number = bills.getString(13)?.toIntOrNull()?.takeIf { it > 0 }
+                    ?: billNo.toIntOrNull()?.takeIf { it > 0 } ?: sourceId.toInt()
+                val mappedParty = if (sourcePartyId > 0L) scalarNullable(target,
+                    "SELECT targetId FROM legacy_import_map WHERE sourceTable='customers' AND sourceId=? AND targetTable='accounts'",
+                    arrayOf(sourcePartyId.toString())) else scalarNullable(target,
+                    "SELECT id FROM accounts WHERE id=? LIMIT 1", arrayOf(sourcePartyId))
+                val partyAccountId = mappedParty ?: if (isCash) -3L else ensureLegacySuspenseAccount(target)
+                val partyName = if (sourcePartyId > 0L) {
+                    source.rawQuery("SELECT name FROM customers WHERE id=? LIMIT 1", arrayOf(sourcePartyId.toString())).use { c ->
+                        if (c.moveToFirst()) c.getString(0)?.trim().orEmpty() else ""
+                    }.ifBlank { "حساب قديم $sourcePartyId" }
+                } else if (isCash) "نقدي" else "حساب مستورد غير مربوط"
+
+                val lineRecords = mutableListOf<Triple<Long, BigDecimal, BigDecimal>>()
+                source.rawQuery(
+                    "SELECT item_id,qty,qty_pr,sls_u_price,curr_id FROM `$lineTable` WHERE bill_id=?",
+                    arrayOf(sourceId.toString()),
+                ).use { lines ->
+                    while (lines.moveToNext()) {
+                        val sourceItemId = lines.getLong(0)
+                        val qty = (lines.getString(2)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+                            ?: lines.getString(1)?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+                        if (qty.signum() <= 0) continue
+                        val itemId = scalarNullable(target,
+                            "SELECT targetId FROM legacy_import_map WHERE sourceTable='items' AND sourceId=? AND targetTable='items'",
+                            arrayOf(sourceItemId.toString())) ?: continue
+                        val lineCurrencyId = lines.getLong(4)
+                        val lineRate = if (lineCurrencyId == baseCurrencyId) BigDecimal.ONE else latestRate[lineCurrencyId] ?: sourceRate
+                        val unitPrice = ((lines.getString(3)?.toBigDecimalOrNull() ?: BigDecimal.ZERO) * lineRate).max(BigDecimal.ZERO)
+                        lineRecords += Triple(itemId, qty, unitPrice)
+                    }
+                }
+
+                val lineGross = lineRecords.fold(BigDecimal.ZERO) { sum, line -> sum + line.second * line.third }
+                val memo = buildString {
+                    append("استيراد محاسب سوفت")
+                    if (billNo.isNotBlank() && billNo != "0") append(" • رقم المصدر ").append(billNo)
+                    if (memoSource.isNotBlank()) append(" • ").append(memoSource)
+                    if (lineRecords.isEmpty()) append(" • لا توجد تفاصيل أصناف قابلة للربط في المصدر")
+                    else if ((lineGross - amount).abs() > BigDecimal("0.01")) append(" • إجمالي التفاصيل يختلف عن إجمالي رأس الفاتورة القديم")
+                }
+
+                target.execSQL(
+                    """INSERT INTO invoices(kind,number,isReturn,isCash,partyAccountId,partyName,warehouseId,date,memo,
+                       discountMicro,netMicro,taxMicro,feesMicro,totalMicro,paidMicro)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    arrayOf(kind.name, number, if (isReturn) 1 else 0, if (isCash) 1 else 0, partyAccountId, partyName,
+                        warehouseId, date, memo, toMicro(discount), toMicro(net), toMicro(tax), 0L, toMicro(total), toMicro(paid)),
+                )
+                val invoiceId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+                lineRecords.forEach { line ->
+                    target.execSQL(
+                        "INSERT INTO invoice_lines(invoiceId,itemId,qtyMicro,priceMicro) VALUES(?,?,?,?)",
+                        arrayOf(invoiceId, line.first, toMicro(line.second), toMicro(line.third)),
+                    )
+                }
+
+                if (total.signum() > 0) {
+                    val hasCostLedger = source.rawQuery(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='items_cost_calc'", null
+                    ).use { it.moveToFirst() && it.getLong(0) > 0L }
+                    val costOfGoods = if (kind == InvoiceKind.SALE && hasCostLedger) {
+                        val costExpr = if (isReturn) "SUM(i_q*n_u)" else "SUM(o_q*n_u)"
+                        source.rawQuery("SELECT COALESCE($costExpr,0) FROM items_cost_calc WHERE bill_id=?", arrayOf(sourceId.toString())).use { c ->
+                            if (c.moveToFirst()) (c.getString(0)?.toBigDecimalOrNull() ?: BigDecimal.ZERO).max(BigDecimal.ZERO) else BigDecimal.ZERO
+                        }
+                    } else BigDecimal.ZERO
+                    val totals = Totals(amount, discount, net, tax, BigDecimal.ZERO, total)
+                    val entry = PostingEngine.invoice(kind, isReturn, isCash, partyAccountId, totals, DEFAULT_ACCOUNTS, date, memo, paid, costOfGoods)
+                    target.execSQL(
+                        "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
+                        arrayOf(date, memo, "legacy_import_invoice", invoiceId, System.currentTimeMillis()),
+                    )
+                    val entryId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+                    entry.lines.forEach { line ->
+                        target.execSQL(
+                            "INSERT INTO journal_lines(entryId,accountId,debitMicro,creditMicro,currencyId) VALUES(?,?,?,?,0)",
+                            arrayOf(entryId, line.accountId, toMicro(line.debit), toMicro(line.credit)),
+                        )
+                    }
+                }
+                upsertMap(target, billTable, sourceId.toString(), "invoices", invoiceId, "OPERATIONAL_INVOICE")
+                imported++
+            }
+        }
+        return imported
+    }
+
+    private fun importVoucherGroups(
+        source: SQLiteDatabase,
+        target: SupportSQLiteDatabase,
+        table: String,
+        baseCurrencyId: Long,
+        latestRate: Map<Long, BigDecimal>,
+    ): Pair<Int, Int> {
+        data class VoucherLine(
+            val sourceId: String, val accountId: Long, val debitMicro: Long, val creditMicro: Long,
+            val date: String, val memo: String,
+        )
+        val groups = linkedMapOf<Pair<Long, Long>, MutableList<VoucherLine>>()
+        val rawRows = linkedMapOf<Pair<Long, Long>, MutableList<Triple<String, Long, Long>>>()
+        source.rawQuery(
+            """SELECT id,cus_id,"in","out",date_,remarks,p_id,tr_type,curr_id,curr_price
+               FROM `$table` WHERE tr_type IN (5,6) AND p_id > 0 ORDER BY tr_type,p_id,id""",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val pId = c.getLong(6)
+                val type = c.getLong(7)
+                val key = pId to type
+                val sourceId = c.getString(0)
+                val date = normalizeLegacyDate(c.getString(4)) ?: ""
+                val memo = c.getString(5)?.trim().orEmpty()
+                val sourceAccountId = c.getLong(1)
+                val accountId = if (sourceAccountId < 0L) {
+                    scalarNullable(target, "SELECT id FROM accounts WHERE id=? LIMIT 1", arrayOf(sourceAccountId))
+                } else scalarNullable(target,
+                    "SELECT targetId FROM legacy_import_map WHERE sourceTable='customers' AND sourceId=? AND targetTable='accounts'",
+                    arrayOf(sourceAccountId.toString()))
+                val direction = c.getString(2)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                val amount = c.getString(3)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                val currencyId = c.getLong(8)
+                val rate = if (currencyId == baseCurrencyId) BigDecimal.ONE else
+                    (c.getString(9)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: latestRate[currencyId] ?: BigDecimal.ZERO)
+                val localAmount = amount.abs() * rate
+                if (accountId != null && accountId != 0L && date.isNotBlank() && direction.signum() != 0 &&
+                    localAmount.signum() > 0 && rate.signum() > 0) {
+                    val micro = toMicro(localAmount)
+                    groups.getOrPut(key) { mutableListOf() }.add(
+                        VoucherLine(sourceId, accountId, if (direction.signum() > 0) micro else 0L,
+                            if (direction.signum() < 0) micro else 0L, date, memo)
+                    )
+                }
+                rawRows.getOrPut(key) { mutableListOf() }.add(Triple(sourceId, pId, type))
+            }
+        }
+
+        var posted = 0
+        var review = 0
+        rawRows.forEach { (key, sourceRows) ->
+            val pId = key.first
+            val type = key.second
+            val refType = "legacy_voucher_${table}_$type"
+            val existingEntry = scalarNullable(target,
+                "SELECT id FROM journal_entries WHERE refType=? AND refId=? LIMIT 1", arrayOf(refType, pId))
+            if (existingEntry != null) {
+                sourceRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", existingEntry, "POSTED_VOUCHER") }
+                return@forEach
+            }
+            val lines = groups[key].orEmpty()
+            val debit = lines.sumOf { it.debitMicro }
+            val credit = lines.sumOf { it.creditMicro }
+            val valid = lines.size >= 2 && lines.size == sourceRows.size && debit > 0L && debit == credit &&
+                lines.map { it.date }.distinct().size == 1
+            if (!valid) {
+                sourceRows.forEach { row -> upsertMap(target, table, row.first, "legacy_import_payloads", null, "ARCHIVED_REVIEW_UNBALANCED") }
+                review++
+                return@forEach
+            }
+            val date = lines.first().date
+            val memo = lines.firstOrNull { it.memo.isNotBlank() }?.memo ?: "سند قديم رقم $pId"
+            target.execSQL(
+                "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
+                arrayOf(date, "ترحيل محاسب سوفت • $memo", refType, pId, System.currentTimeMillis()),
+            )
+            val entryId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+            lines.forEach { line ->
+                target.execSQL(
+                    "INSERT INTO journal_lines(entryId,accountId,debitMicro,creditMicro,currencyId) VALUES(?,?,?,?,0)",
+                    arrayOf(entryId, line.accountId, line.debitMicro, line.creditMicro),
+                )
+            }
+            sourceRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", entryId, "POSTED_VOUCHER") }
+            posted++
+        }
+        return posted to review
+    }
+
+    private fun ensureLegacySuspenseAccount(db: SupportSQLiteDatabase): Long {
+        val name = "حساب مستورد غير مربوط"
+        val existing = scalarNullable(db, "SELECT id FROM accounts WHERE name=? COLLATE NOCASE LIMIT 1", arrayOf(name))
+        if (existing != null) return existing
+        db.execSQL("INSERT INTO accounts(name,groupId,isSystem,phone,creditLimitMicro) VALUES(?,124,0,NULL,0)", arrayOf(name))
+        val id = scalar(db, "SELECT id FROM accounts WHERE name=? COLLATE NOCASE LIMIT 1", arrayOf(name))
+        val category = scalarNullable(db, "SELECT id FROM account_categories WHERE name='أخرى' LIMIT 1", emptyArray())
+        if (category != null) db.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)", arrayOf(id, category))
+        return id
+    }
+
+    private fun normalizeLegacyDate(value: String?): String? {
+        val v = value?.trim().orEmpty()
+        if (v.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) return v
+        val m = Regex("^(\\d{2})-(\\d{2})-(\\d{4})$").matchEntire(v) ?: return null
+        return "${m.groupValues[3]}-${m.groupValues[2]}-${m.groupValues[1]}"
+    }
+
+    private fun upsertMap(db: SupportSQLiteDatabase, table: String, sourceId: String, targetTable: String, targetId: Long?, disposition: String) {
+        db.execSQL(
+            "INSERT OR IGNORE INTO legacy_import_map(sourceTable,sourceId,targetTable,targetId,disposition) VALUES(?,?,?,?,?)",
+            arrayOf(table, sourceId, targetTable, targetId, disposition),
+        )
+        db.execSQL(
+            "UPDATE legacy_import_map SET targetTable=?,targetId=?,disposition=? WHERE sourceTable=? AND sourceId=?",
+            arrayOf(targetTable, targetId, disposition, table, sourceId),
+        )
     }
 
     private fun ensureCategory(db: SupportSQLiteDatabase, name: String, groupId: Long, color: String, sortOrder: Int): Long {
