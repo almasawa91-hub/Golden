@@ -268,6 +268,25 @@ object LegacyDatabaseImporter {
                         if (price != null) latestBasePrices.putIfAbsent(itemId, price)
                     }
                 }
+
+                // Final fallback: historical invoice prices for legacy items not priced in the
+                // current period. Current prices always win because this uses putIfAbsent.
+                source.rawQuery("""SELECT bt.item_id, bt.sls_u_price
+                    FROM bill_transactions_h bt
+                    JOIN bills_h b ON b.id=bt.bill_id
+                    JOIN (
+                        SELECT bt2.item_id, MAX(b2.date_ || printf('%020d', b2.id)) AS latest_key
+                        FROM bill_transactions_h bt2 JOIN bills_h b2 ON b2.id=bt2.bill_id
+                        WHERE bt2.curr_id=0 AND bt2.sls_u_price > 0
+                        GROUP BY bt2.item_id
+                    ) x ON x.item_id=bt.item_id AND (b.date_ || printf('%020d', b.id))=x.latest_key
+                    WHERE bt.curr_id=0 AND bt.sls_u_price > 0""", null).use { c ->
+                    while (c.moveToNext()) {
+                        val itemId = c.getLong(0)
+                        val price = c.getString(1)?.toBigDecimalOrNull()
+                        if (price != null) latestBasePrices.putIfAbsent(itemId, price)
+                    }
+                }
                 val latestStock = mutableMapOf<Long, Pair<BigDecimal, BigDecimal>>()
                 source.rawQuery("""SELECT s.item_id, s.n_q, s.n_u FROM items_cost_calc s
                     JOIN (SELECT item_id, MAX(date_ || printf('%020d', id2)) AS latest_key
