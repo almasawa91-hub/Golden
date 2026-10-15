@@ -28,6 +28,27 @@ class AccountingTest {
         assertBd("450", t.total)
     }
 
+    @Test fun invoiceRejectsEmptyLines() {
+        assertFailsWith<IllegalArgumentException> { InvoiceMath.totals(emptyList()) }
+    }
+
+    @Test fun invoiceRejectsNegativeQuantity() {
+        assertFailsWith<IllegalArgumentException> { InvoiceLine(1, bd("-1"), bd("10")) }
+    }
+
+    @Test fun invoiceRejectsDiscountAboveOneHundredPercent() {
+        assertFailsWith<IllegalArgumentException> {
+            InvoiceMath.totals(lines, discount = bd("101"), discountIsPercent = true)
+        }
+    }
+
+    @Test fun postingRejectsPaymentAboveInvoiceTotal() {
+        assertFailsWith<IllegalArgumentException> {
+            PostingEngine.invoice(InvoiceKind.SALE, false, false, 77, InvoiceMath.totals(lines),
+                ids, "d", "m", paid = bd("501"))
+        }
+    }
+
     @Test fun cashSaleIsBalancedAndDebitsCash() {
         val t = InvoiceMath.totals(lines, taxRatePercent = bd("5"))
         val e = PostingEngine.invoice(InvoiceKind.SALE, false, true, 77, t, ids, "2026-10-03", "بيع", costOfGoods = bd("300"))
