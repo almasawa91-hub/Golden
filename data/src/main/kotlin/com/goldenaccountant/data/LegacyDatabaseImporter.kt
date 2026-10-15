@@ -55,6 +55,9 @@ object LegacyDatabaseImporter {
                 while (c.moveToNext()) tables += c.getString(0)
             }
             require(archiveTables.all { it in tables }) { "تنقص قاعدة المصدر جداول أساسية لازمة للاستيراد" }
+            // Preserve every non-system source table, including secondary/history tables not yet
+            // mapped into Golden's operational model.
+            val sourceTables = tables.toList().sorted()
 
             target.execSQL("""CREATE TABLE IF NOT EXISTS legacy_import_map (
                 sourceTable TEXT NOT NULL, sourceId TEXT NOT NULL, targetTable TEXT NOT NULL,
@@ -83,7 +86,7 @@ object LegacyDatabaseImporter {
             try {
                 // Retain the legacy rows first, so source records remain recoverable even when
                 // they cannot safely be posted to Golden's accounting engine.
-                archiveTables.forEach { table ->
+                sourceTables.forEach { table ->
                     val before = scalar(target, "SELECT COUNT(*) FROM legacy_import_payloads WHERE sourceTable = ?", arrayOf(table))
                     val rows = archiveSourceTable(source, target, table)
                     val after = scalar(target, "SELECT COUNT(*) FROM legacy_import_payloads WHERE sourceTable = ?", arrayOf(table))
@@ -398,7 +401,7 @@ object LegacyDatabaseImporter {
 
                 // Every imported source row is idempotently archived. Financial records are
                 // intentionally marked for reconciliation instead of inventing debit/credit sides.
-                archiveTables.forEach { table ->
+                sourceTables.forEach { table ->
                     source.rawQuery("SELECT * FROM `$table`", null).use { c ->
                         val idIndex = c.getColumnIndex("id")
                         var rowIndex = 0L
