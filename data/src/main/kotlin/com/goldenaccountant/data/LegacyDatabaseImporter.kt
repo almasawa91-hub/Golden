@@ -33,6 +33,8 @@ object LegacyDatabaseImporter {
         val invoicesAdded: Int,
         val voucherGroupsPosted: Int,
         val voucherGroupsForReview: Int,
+        val manualTransactionsPosted: Int,
+        val manualTransactionsForReview: Int,
         val archivedRowsAdded: Long,
         val archivedRowsAlreadyPresent: Long,
     )
@@ -79,6 +81,8 @@ object LegacyDatabaseImporter {
             var invoicesAdded = 0
             var voucherGroupsPosted = 0
             var voucherGroupsForReview = 0
+            var manualTransactionsPosted = 0
+            var manualTransactionsForReview = 0
             var archivedAdded = 0L
             var archivedExisting = 0L
 
@@ -400,8 +404,19 @@ object LegacyDatabaseImporter {
                 // Only balanced, fully-mapped receipt/payment groups are posted.
                 val currentVoucherResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate)
                 val historicalVoucherResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate)
-                voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first
-                voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second
+                val currentTransferResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate,
+                    "tr_type=0 AND bill_id<0 AND p_id>0")
+                val historicalTransferResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate,
+                    "tr_type=0 AND bill_id<0 AND p_id>0")
+                voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first +
+                    currentTransferResult.first + historicalTransferResult.first
+                voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second +
+                    currentTransferResult.second + historicalTransferResult.second
+
+                val currentManualResult = importManualPairs(source, target, "transactions", baseCurrencyId, latestRate)
+                val historicalManualResult = importManualPairs(source, target, "transactions_h", baseCurrencyId, latestRate)
+                manualTransactionsPosted += currentManualResult.first + historicalManualResult.first
+                manualTransactionsForReview += currentManualResult.second + historicalManualResult.second
 
                 // Every imported source row is idempotently archived. Financial records are
                 // intentionally marked for reconciliation instead of inventing debit/credit sides.
@@ -432,7 +447,7 @@ object LegacyDatabaseImporter {
             } finally {
                 target.endTransaction()
             }
-            return Result(groupsAdded, accountsAdded, accountsMatched, itemsAdded, itemsMatched, currenciesAdded, stockBalancesAdded, invoicesAdded, voucherGroupsPosted, voucherGroupsForReview, archivedAdded, archivedExisting)
+            return Result(groupsAdded, accountsAdded, accountsMatched, itemsAdded, itemsMatched, currenciesAdded, stockBalancesAdded, invoicesAdded, voucherGroupsPosted, voucherGroupsForReview, manualTransactionsPosted, manualTransactionsForReview, archivedAdded, archivedExisting)
         } finally {
             source.close()
         }
@@ -571,6 +586,7 @@ object LegacyDatabaseImporter {
         table: String,
         baseCurrencyId: Long,
         latestRate: Map<Long, BigDecimal>,
+        selection: String = "tr_type IN (5,6) AND p_id > 0",
     ): Pair<Int, Int> {
         data class VoucherLine(
             val sourceId: String, val accountId: Long, val debitMicro: Long, val creditMicro: Long,
@@ -578,9 +594,11 @@ object LegacyDatabaseImporter {
         )
         val groups = linkedMapOf<Pair<Long, Long>, MutableList<VoucherLine>>()
         val rawRows = linkedMapOf<Pair<Long, Long>, MutableList<Triple<String, Long, Long>>>()
+        val zeroRows = linkedMapOf<Pair<Long, Long>, MutableList<Triple<String, Long, Long>>>()
+        val counterpartBySource = mutableMapOf<String, Long?>()
         source.rawQuery(
-            """SELECT id,cus_id,"in","out",date_,remarks,p_id,tr_type,curr_id,curr_price
-               FROM `$table` WHERE tr_type IN (5,6) AND p_id > 0 ORDER BY tr_type,p_id,id""",
+            """SELECT id,cus_id,"in","out",date_,remarks,p_id,tr_type,curr_id,curr_price,t_cus_id
+               FROM `$table` WHERE $selection ORDER BY tr_type,p_id,id""",
             null,
         ).use { c ->
             while (c.moveToNext()) {
@@ -591,13 +609,17 @@ object LegacyDatabaseImporter {
                 val date = normalizeLegacyDate(c.getString(4)) ?: ""
                 val memo = c.getString(5)?.trim().orEmpty()
                 val sourceAccountId = c.getLong(1)
-                val accountId = if (sourceAccountId < 0L) {
-                    scalarNullable(target, "SELECT id FROM accounts WHERE id=? LIMIT 1", arrayOf(sourceAccountId))
-                } else scalarNullable(target,
-                    "SELECT targetId FROM legacy_import_map WHERE sourceTable='customers' AND sourceId=? AND targetTable='accounts'",
-                    arrayOf(sourceAccountId.toString()))
                 val direction = c.getString(2)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
                 val amount = c.getString(3)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                val counterpartSourceId = if (c.isNull(10)) 0L else c.getLong(10)
+                counterpartBySource[sourceId] = mapLegacyAccount(target, counterpartSourceId)
+                val row = Triple(sourceId, pId, type)
+                if (amount.signum() == 0) {
+                    zeroRows.getOrPut(key) { mutableListOf() }.add(row)
+                    continue
+                }
+
+                val accountId = mapLegacyAccount(target, sourceAccountId)
                 val currencyId = c.getLong(8)
                 val rate = if (currencyId == baseCurrencyId) BigDecimal.ONE else
                     (c.getString(9)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: latestRate[currencyId] ?: BigDecimal.ZERO)
@@ -610,7 +632,7 @@ object LegacyDatabaseImporter {
                             if (direction.signum() < 0) micro else 0L, date, memo)
                     )
                 }
-                rawRows.getOrPut(key) { mutableListOf() }.add(Triple(sourceId, pId, type))
+                rawRows.getOrPut(key) { mutableListOf() }.add(row)
             }
         }
 
@@ -620,19 +642,31 @@ object LegacyDatabaseImporter {
             val pId = key.first
             val type = key.second
             val refType = "legacy_voucher_${table}_$type"
+            val allRows = sourceRows + zeroRows[key].orEmpty()
             val existingEntry = scalarNullable(target,
                 "SELECT id FROM journal_entries WHERE refType=? AND refId=? LIMIT 1", arrayOf(refType, pId))
             if (existingEntry != null) {
-                sourceRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", existingEntry, "POSTED_VOUCHER") }
+                allRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", existingEntry, "POSTED_VOUCHER") }
                 return@forEach
             }
-            val lines = groups[key].orEmpty()
+            val lines = groups[key].orEmpty().toMutableList()
+            var usedCounterpartFallback = false
+            if (lines.size == 1 && sourceRows.size == 1) {
+                val original = lines.single()
+                val counterpart = counterpartBySource[original.sourceId]
+                if (counterpart != null && counterpart != original.accountId) {
+                    lines += VoucherLine("counterpart:${original.sourceId}", counterpart,
+                        original.creditMicro, original.debitMicro, original.date, original.memo)
+                    usedCounterpartFallback = true
+                }
+            }
             val debit = lines.sumOf { it.debitMicro }
             val credit = lines.sumOf { it.creditMicro }
-            val valid = lines.size >= 2 && lines.size == sourceRows.size && debit > 0L && debit == credit &&
+            val expectedLineCount = sourceRows.size + if (usedCounterpartFallback) 1 else 0
+            val valid = lines.size >= 2 && lines.size == expectedLineCount && debit > 0L && debit == credit &&
                 lines.map { it.date }.distinct().size == 1
             if (!valid) {
-                sourceRows.forEach { row -> upsertMap(target, table, row.first, "legacy_import_payloads", null, "ARCHIVED_REVIEW_UNBALANCED") }
+                allRows.forEach { row -> upsertMap(target, table, row.first, "legacy_import_payloads", null, "ARCHIVED_REVIEW_UNBALANCED") }
                 review++
                 return@forEach
             }
@@ -649,10 +683,94 @@ object LegacyDatabaseImporter {
                     arrayOf(entryId, line.accountId, line.debitMicro, line.creditMicro),
                 )
             }
-            sourceRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", entryId, "POSTED_VOUCHER") }
+            allRows.forEach { row -> upsertMap(target, table, row.first, "journal_entries", entryId, "POSTED_VOUCHER") }
             posted++
         }
         return posted to review
+    }
+
+    private fun importManualPairs(
+        source: SQLiteDatabase,
+        target: SupportSQLiteDatabase,
+        table: String,
+        baseCurrencyId: Long,
+        latestRate: Map<Long, BigDecimal>,
+    ): Pair<Int, Int> {
+        var posted = 0
+        var review = 0
+        val refType = "legacy_manual_pair_$table"
+        source.rawQuery(
+            """SELECT id,cus_id,"in","out",date_,remarks,t_cus_id,curr_id,curr_price
+               FROM `$table`
+               WHERE tr_type=0 AND (bill_id=0 OR (bill_id<0 AND p_id=0))
+               ORDER BY id""",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val sourceId = c.getLong(0)
+                val sourceKey = sourceId.toString()
+                val already = scalarNullable(target,
+                    "SELECT CASE WHEN disposition='POSTED_MANUAL_PAIR' THEN 1 ELSE 0 END FROM legacy_import_map WHERE sourceTable=? AND sourceId=?",
+                    arrayOf(table, sourceKey))
+                if (already == 1L) continue
+                val existingEntry = scalarNullable(target,
+                    "SELECT id FROM journal_entries WHERE refType=? AND refId=? LIMIT 1", arrayOf(refType, sourceId))
+                if (existingEntry != null) {
+                    upsertMap(target, table, sourceKey, "journal_entries", existingEntry, "POSTED_MANUAL_PAIR")
+                    continue
+                }
+
+                val accountId = mapLegacyAccount(target, c.getLong(1))
+                val counterpartSourceId = if (c.isNull(6)) 0L else c.getLong(6)
+                val counterpartId = mapLegacyAccount(target, counterpartSourceId)
+                val direction = c.getString(2)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                val amount = c.getString(3)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                val date = normalizeLegacyDate(c.getString(4))
+                val currencyId = c.getLong(7)
+                val rate = if (currencyId == baseCurrencyId) BigDecimal.ONE else
+                    (c.getString(8)?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: latestRate[currencyId] ?: BigDecimal.ZERO)
+                val localAmount = amount.abs() * rate
+                if (accountId == null || counterpartId == null || accountId == counterpartId ||
+                    direction.signum() == 0 || localAmount.signum() <= 0 || rate.signum() <= 0 || date == null) {
+                    upsertMap(target, table, sourceKey, "legacy_import_payloads", null, "ARCHIVED_REVIEW_UNMAPPED_PAIR")
+                    review++
+                    continue
+                }
+                val micro = toMicro(localAmount)
+                val mainDebit = if (direction.signum() > 0) micro else 0L
+                val mainCredit = if (direction.signum() < 0) micro else 0L
+                val contraDebit = mainCredit
+                val contraCredit = mainDebit
+                val memo = "ترحيل حركة قديمة • " + (c.getString(5)?.trim().orEmpty().ifBlank { "حركة رقم $sourceId" })
+                target.execSQL(
+                    "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
+                    arrayOf(date, memo, refType, sourceId, System.currentTimeMillis()),
+                )
+                val entryId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+                target.execSQL(
+                    "INSERT INTO journal_lines(entryId,accountId,debitMicro,creditMicro,currencyId) VALUES(?,?,?,?,0)",
+                    arrayOf(entryId, accountId, mainDebit, mainCredit),
+                )
+                target.execSQL(
+                    "INSERT INTO journal_lines(entryId,accountId,debitMicro,creditMicro,currencyId) VALUES(?,?,?,?,0)",
+                    arrayOf(entryId, counterpartId, contraDebit, contraCredit),
+                )
+                upsertMap(target, table, sourceKey, "journal_entries", entryId, "POSTED_MANUAL_PAIR")
+                posted++
+            }
+        }
+        return posted to review
+    }
+
+    private fun mapLegacyAccount(db: SupportSQLiteDatabase, sourceAccountId: Long): Long? {
+        if (sourceAccountId == 0L) return null
+        return if (sourceAccountId < 0L) {
+            scalarNullable(db, "SELECT id FROM accounts WHERE id=? LIMIT 1", arrayOf(sourceAccountId))
+        } else {
+            scalarNullable(db,
+                "SELECT targetId FROM legacy_import_map WHERE sourceTable='customers' AND sourceId=? AND targetTable='accounts'",
+                arrayOf(sourceAccountId.toString()))
+        }
     }
 
     private fun ensureLegacySuspenseAccount(db: SupportSQLiteDatabase): Long {
