@@ -114,7 +114,25 @@ object LegacyDatabaseImporter {
                 target.query("SELECT id,name,parentId FROM account_groups").use { c ->
                     while (c.moveToNext()) {
                         val id = c.getLong(0)
-                        groupNames[id] = c.getString(1)?.trim().orEmpty().ifEmpty { "مجموعة $id" }
+                        val sourceName = c.getString(1)?.trim().orEmpty().ifEmpty { "مجموعة $id" }
+                        groupNames[id] = when (id) {
+                            1L -> "الأصول"
+                            2L -> "الالتزامات"
+                            3L -> "المصروفات"
+                            4L -> "الإيرادات"
+                            11L, 111L, 13L -> "الأصول الثابتة"
+                            12L -> "الأصول المتداولة"
+                            121L -> "الصناديق"
+                            122L -> "البنوك"
+                            123L -> "العملاء"
+                            126L -> "العملاء (الثقه)"
+                            21L -> "حقوق الملكية"
+                            22L, 23L -> "الالتزامات"
+                            31L, 32L -> "المصروفات"
+                            41L, 42L -> "الإيرادات"
+                            221L -> "الموردون"
+                            else -> sourceName
+                        }
                         parentByGroup[id] = if (c.isNull(2)) 0L else c.getLong(2)
                     }
                 }
@@ -190,6 +208,14 @@ object LegacyDatabaseImporter {
                         }
                         if (targetId != null) {
                             linkLegacyCategory(target, targetId, groupId, customerType)
+                            var ancestorId = groupId
+                            val seenAncestors = mutableSetOf<Long>()
+                            while (ancestorId != 0L && seenAncestors.add(ancestorId)) {
+                                categoryByGroup[ancestorId]?.let { categoryId ->
+                                    target.execSQL("INSERT OR IGNORE INTO account_category_links(accountId,categoryId) VALUES(?,?)", arrayOf(targetId, categoryId))
+                                }
+                                ancestorId = parentByGroup[ancestorId] ?: 0L
+                            }
                             putMap(target, "customers", sourceId.toString(), "accounts", targetId, if (existing != null) "MATCHED_NAME" else "INSERTED")
                         } else putMap(target, "customers", sourceId.toString(), "accounts", null, "SKIPPED_UNRESOLVED")
                     }
