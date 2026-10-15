@@ -287,7 +287,7 @@ object LegacyDatabaseImporter {
                         }
                         val barcode = c.getString(10)?.trim()?.takeIf { it.isNotEmpty() }
                         val existingByName = scalarNullable(target, "SELECT id FROM items WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
-                        val existingByBarcode = barcode?.let { scalarNullable(target, "SELECT id FROM items WHERE barcode = ? LIMIT 1", arrayOf(it) }
+                        val existingByBarcode = barcode?.let { scalarNullable(target, "SELECT id FROM items WHERE barcode = ? LIMIT 1", arrayOf(it)) }
                         val existing = existingByName ?: existingByBarcode
                         val targetId: Long
                         if (existing != null) {
