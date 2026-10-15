@@ -398,13 +398,19 @@ object LegacyDatabaseImporter {
                 // Only balanced, fully-mapped receipt/payment groups are posted.
                 val currentVoucherResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate)
                 val historicalVoucherResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate)
-                val extraHistoricalVoucherResult = importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate)
+                // Some database versions do not contain the secondary history table.
+                val hasSecondaryHistory = "transactions_h2" in sourceTables
+                val extraHistoricalVoucherResult = if (hasSecondaryHistory) {
+                    importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate)
+                } else 0 to 0
                 val currentTransferResult = importVoucherGroups(source, target, "transactions", baseCurrencyId, latestRate,
                     "tr_type=0 AND bill_id<0 AND p_id>0")
                 val historicalTransferResult = importVoucherGroups(source, target, "transactions_h", baseCurrencyId, latestRate,
                     "tr_type=0 AND bill_id<0 AND p_id>0")
-                val extraHistoricalTransferResult = importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate,
-                    "tr_type=0 AND bill_id<0 AND p_id>0")
+                val extraHistoricalTransferResult = if (hasSecondaryHistory) {
+                    importVoucherGroups(source, target, "transactions_h2", baseCurrencyId, latestRate,
+                        "tr_type=0 AND bill_id<0 AND p_id>0")
+                } else 0 to 0
                 voucherGroupsPosted += currentVoucherResult.first + historicalVoucherResult.first + extraHistoricalVoucherResult.first +
                     currentTransferResult.first + historicalTransferResult.first + extraHistoricalTransferResult.first
                 voucherGroupsForReview += currentVoucherResult.second + historicalVoucherResult.second + extraHistoricalVoucherResult.second +
@@ -412,7 +418,9 @@ object LegacyDatabaseImporter {
 
                 val currentManualResult = importManualPairs(source, target, "transactions", baseCurrencyId, latestRate)
                 val historicalManualResult = importManualPairs(source, target, "transactions_h", baseCurrencyId, latestRate)
-                val extraHistoricalManualResult = importManualPairs(source, target, "transactions_h2", baseCurrencyId, latestRate)
+                val extraHistoricalManualResult = if (hasSecondaryHistory) {
+                    importManualPairs(source, target, "transactions_h2", baseCurrencyId, latestRate)
+                } else 0 to 0
                 manualTransactionsPosted += currentManualResult.first + historicalManualResult.first + extraHistoricalManualResult.first
                 manualTransactionsForReview += currentManualResult.second + historicalManualResult.second + extraHistoricalManualResult.second
 
