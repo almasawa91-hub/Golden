@@ -29,15 +29,27 @@ fun Context.header(title:String,onBack:(()->Unit)?,vararg actions:Pair<String,()
  orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;background=gradient();minimumHeight=dp(56)
  if(onBack!=null)addView(text("‹",30f,Color.WHITE).apply{gravity=Gravity.CENTER;setOnClickListener{onBack()}},LinearLayout.LayoutParams(dp(52),dp(56)))
  addView(text(title,18f,Color.WHITE,true).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(0,-2,1f))
- actions.forEach{(label,click)->addView(text(label,19f,Color.WHITE).apply{gravity=Gravity.CENTER;setOnClickListener{click()}},LinearLayout.LayoutParams(dp(52),dp(56)))}
+ actions.forEach{(label,click)->
+  addView(text(label,18f,NAVY,true).apply{
+   gravity=Gravity.CENTER
+   background=GradientDrawable().apply{cornerRadius=dp(11).toFloat();setColor(GOLD)}
+   setPadding(dp(5),dp(5),dp(5),dp(5))
+   setOnClickListener{click()}
+  },LinearLayout.LayoutParams(dp(46),dp(42)).apply{marginStart=dp(3);marginEnd=dp(3)})
+ }
 }
 fun Context.footer(onAdd: (() -> Unit)?,label:String="")=LinearLayout(this).apply{
- orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;setBackgroundColor(NAVY);minimumHeight=dp(54)
+ orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;setBackgroundColor(NAVY);minimumHeight=dp(58)
  addView(text(label,13f,Color.WHITE).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(0,-2,1f))
- if(onAdd!=null)addView(text("+",28f,NAVY,true).apply{gravity=Gravity.CENTER;background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(GOLD)};setOnClickListener{onAdd()}},LinearLayout.LayoutParams(dp(42),dp(42)).apply{marginEnd=dp(12)})
+ if(onAdd!=null)addView(text("+",27f,NAVY,true).apply{gravity=Gravity.CENTER;background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(GOLD)};setOnClickListener{onAdd()}},LinearLayout.LayoutParams(dp(44),dp(44)).apply{marginEnd=dp(12)})
 }
-fun Context.pill(label:String,onClick:()->Unit)=text(label,14f,Color.WHITE,true).apply{
- gravity=Gravity.CENTER;setPadding(dp(14),dp(10),dp(14),dp(10));background=GradientDrawable().apply{cornerRadius=dp(10).toFloat();setColor(BLUE)};setOnClickListener{onClick()}
+fun Context.pill(label:String,onClick:()->Unit)=text(label,14f,NAVY,true).apply{
+ gravity=Gravity.CENTER
+ minHeight=dp(44)
+ setPadding(dp(16),dp(11),dp(16),dp(11))
+ background=GradientDrawable().apply{cornerRadius=dp(12).toFloat();setColor(GOLD);setStroke(dp(1),DARK_GOLD)}
+ isClickable=true
+ setOnClickListener{onClick()}
 }
 fun Context.card(title:String,value:String,accent:Int=GOLD,onClick:(()->Unit)?=null)=LinearLayout(this).apply{
  orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;setPadding(dp(12),dp(14),dp(12),dp(14));background=GradientDrawable().apply{cornerRadius=dp(14).toFloat();setColor(SURFACE);setStroke(dp(1),BORDER)}
@@ -47,7 +59,12 @@ fun Context.rowOf(vararg cols:String,header:Boolean=false)=LinearLayout(this).ap
  orientation=LinearLayout.HORIZONTAL;layoutDirection=View.LAYOUT_DIRECTION_RTL;setPadding(dp(10),dp(if(header)8 else 12),dp(10),dp(if(header)8 else 12));if(header)setBackgroundColor(Color.parseColor("#F1F5F9"))
  cols.forEach{c->addView(text(c,if(header)13f else 14f,if(header)BLUE else TEXT,header).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(0,-2,1f))}
 }
-fun Context.field(hint:String,number:Boolean=false)=EditText(this).apply{this.hint=hint;textSize=15f;textDirection=View.TEXT_DIRECTION_RTL;if(number)inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL}
+fun Context.field(hint:String,number:Boolean=false)=EditText(this).apply{
+ this.hint=hint;textSize=15f;textDirection=View.TEXT_DIRECTION_RTL
+ setPadding(dp(12),dp(10),dp(12),dp(10))
+ background=GradientDrawable().apply{cornerRadius=dp(9).toFloat();setColor(SURFACE);setStroke(dp(1),BORDER)}
+ if(number)inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+}
 fun Context.toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
 fun String.num():BigDecimal?=map{if(it in '٠'..'٩' )('0'.code+(it-'٠')).toChar() else it}.joinToString("").replace("٫",".").trim().toBigDecimalOrNull()
 fun fmt(v:BigDecimal)=String.format(Locale.US,"%,.2f",v)
