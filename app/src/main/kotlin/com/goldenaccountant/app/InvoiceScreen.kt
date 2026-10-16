@@ -25,31 +25,29 @@ class InvoiceScreen(val kind: InvoiceKind) : Screen {
         val isReturn = CheckBox(a).apply { text = "مرتجع" }
         val credit = Switch(a).apply { text = "آجل"; isChecked = true }
 
-        // AutoCompleteTextView displays real database matches from the first character.
-        val party = AutoCompleteTextView(a).apply {
-            hint = if (sale) "ابدأ بكتابة اسم العميل..." else "ابدأ بكتابة اسم المورد..."
+        fun autocomplete(hintText:String) = AutoCompleteTextView(a).apply {
+            hint = hintText
             textSize = 15f
             threshold = 1
             setSingleLine(true)
             textDirection = View.TEXT_DIRECTION_RTL
             setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12))
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(SURFACE); cornerRadius = a.dp(10).toFloat(); setStroke(a.dp(1), BORDER)
+                setColor(SURFACE)
+                cornerRadius = a.dp(10).toFloat()
+                setStroke(a.dp(1), BORDER)
+            }
+            dropDownHeight = a.dp(240)
+            dropDownVerticalOffset = a.dp(3)
+            setOnFocusChangeListener { _, focused ->
+                if (focused && text.isNotEmpty()) post { showDropDown() }
             }
         }
+
+        val party = autocomplete(if (sale) "ابدأ بكتابة اسم العميل..." else "ابدأ بكتابة اسم المورد...")
         val date = a.field("التاريخ").apply { setText(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())) }
         val note = a.field("ملاحظات")
-        val item = AutoCompleteTextView(a).apply {
-            hint = "ابدأ بكتابة اسم الصنف..."
-            textSize = 15f
-            threshold = 1
-            setSingleLine(true)
-            textDirection = View.TEXT_DIRECTION_RTL
-            setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(SURFACE); cornerRadius = a.dp(10).toFloat(); setStroke(a.dp(1), BORDER)
-            }
-        }
+        val item = autocomplete("ابدأ بكتابة اسم الصنف...")
         val qty = a.field("الكمية", true)
         val price = a.field("السعر", true)
         val table = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
@@ -70,7 +68,8 @@ class InvoiceScreen(val kind: InvoiceKind) : Screen {
 
         fun save() {
             if (lines.isEmpty()) return a.toast("أضف صنفاً واحداً على الأقل")
-            val draft = InvoiceDraft(kind, isReturn.isChecked, !credit.isChecked, party.text.toString(), 1, date.text.toString(), note.text.toString(), lines.toList())
+            if (party.text.toString().isBlank()) return a.toast(if (sale) "اختر العميل أو اكتب اسمه" else "اختر المورد أو اكتب اسمه")
+            val draft = InvoiceDraft(kind, isReturn.isChecked, !credit.isChecked, party.text.toString().trim(), 1, date.text.toString(), note.text.toString(), lines.toList())
             a.lifecycleScope.launch {
                 try {
                     a.app.invoices.post(draft)
@@ -119,8 +118,6 @@ class InvoiceScreen(val kind: InvoiceKind) : Screen {
             item.text.clear(); qty.text.clear(); price.text.clear()
             item.clearFocus()
             refresh()
-        }.apply {
-            setPadding(a.dp(18), a.dp(12), a.dp(18), a.dp(12))
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = a.dp(8); bottomMargin = a.dp(12) })
 
         form.addView(table)
@@ -134,18 +131,16 @@ class InvoiceScreen(val kind: InvoiceKind) : Screen {
                     .map { it.name }
                     .distinct()
                     .sorted()
-                party.setAdapter(ArrayAdapter(a, android.R.layout.simple_dropdown_item_1line, accounts))
-                party.setOnFocusChangeListener { _, focused -> if (focused && party.text.isNotEmpty()) party.showDropDown() }
+                party.setAdapter(a.suggestionAdapter(accounts))
 
                 val items = a.app.accounting.items()
                 val names = items.map { it.name }.distinct().sorted()
                 itemPrices = items.associate { it.name to fmtMicro(it.salePriceMicro) }
-                item.setAdapter(ArrayAdapter(a, android.R.layout.simple_dropdown_item_1line, names))
+                item.setAdapter(a.suggestionAdapter(names))
                 item.setOnItemClickListener { _, _, position, _ ->
                     val selected = item.adapter.getItem(position)?.toString().orEmpty()
                     if (selected.isNotBlank()) itemPrices[selected]?.let { price.setText(it) }
                 }
-                item.setOnFocusChangeListener { _, focused -> if (focused && item.text.isNotEmpty()) item.showDropDown() }
             } catch (e: Exception) {
                 a.toast("تعذر تحميل اقتراحات العملاء والأصناف")
             }
