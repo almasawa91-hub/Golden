@@ -123,8 +123,8 @@ object LegacyDatabaseImporter {
                     if (matched != null) {
                         sourceGroupToTarget[sourceId] = matched
                     } else {
-                        target.execSQL("INSERT INTO account_groups(name,parentId) VALUES(?,0)", arrayOf(sourceName))
-                        val newId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+                        val newId = (targetGroupNames.keys.maxOrNull() ?: 0L) + 1L
+                        target.execSQL("INSERT INTO account_groups(id,name,parentId) VALUES(?,?,0)", arrayOf(newId, sourceName))
                         sourceGroupToTarget[sourceId] = newId
                         targetGroupNames[newId] = sourceName
                         newlyCreatedSourceGroups += sourceId
