@@ -110,10 +110,10 @@ fun Context.suggestionAdapter(values: List<String>): ArrayAdapter<String> {
                 val matches = if (query.isBlank()) allValues else allValues.filter { candidate ->
                     normalizeSuggestion(candidate).contains(query)
                 }
-                return FilterResults().apply {
-                    values = ArrayList(matches)
-                    count = matches.size
-                }
+                val filteredResults = FilterResults()
+                filteredResults.values = ArrayList(matches)
+                filteredResults.count = matches.size
+                return filteredResults
             }
 
             override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
