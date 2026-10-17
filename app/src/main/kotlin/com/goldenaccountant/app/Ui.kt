@@ -88,11 +88,11 @@ fun Context.field(hint:String,number:Boolean=false)=EditText(this).apply{
  if(number)inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
 }
 
-/** Autocomplete adapter that searches inside names and tolerates common Arabic letter variants. */
-private fun normalizeSuggestion(value:String):String = buildString {
+/** بحث آمن داخل أسماء العملاء والأصناف، مع تطبيع الحروف العربية دون تعديل الاسم المعروض. */
+private fun normalizeSuggestion(value: String): String = buildString {
     value.lowercase(Locale.ROOT).forEach { ch ->
         when (ch) {
-            in '\u064B'..'\u065F', '\u0670', '\u0640' -> Unit // diacritics and tatweel
+            in '\u064B'..'\u065F', '\u0670', '\u0640' -> Unit
             'أ', 'إ', 'آ', 'ٱ' -> append('ا')
             'ى' -> append('ي')
             else -> append(ch)
@@ -100,39 +100,59 @@ private fun normalizeSuggestion(value:String):String = buildString {
     }
 }
 
-fun Context.suggestionAdapter(values:List<String>):ArrayAdapter<String> =
-    object : ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, values.distinct().sorted()) {
-        private val allValues = values.distinct().sorted()
+fun Context.suggestionAdapter(values: List<String>): ArrayAdapter<String> {
+    val sourceValues = values.asSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted().toList()
+    return object : ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, ArrayList(sourceValues)) {
+        private val allValues: List<String> = sourceValues.toList()
         private val nameFilter = object : Filter() {
-            override fun performFiltering(constraint:CharSequence?):FilterResults {
-                val query = normalizeSuggestion(constraint?.toString().orEmpty().trim())
-                val matches = if (query.isEmpty()) allValues else allValues.filter {
-                    normalizeSuggestion(it).contains(query)
+            override fun performFiltering(constraint: CharSequence?): FilterResults {
+                val query = normalizeSuggestion(constraint?.toString().orEmpty())
+                val matches = if (query.isBlank()) allValues else allValues.filter { candidate ->
+                    normalizeSuggestion(candidate).contains(query)
                 }
-                return FilterResults().apply { this.values=matches; count=matches.size }
+                return FilterResults().apply {
+                    values = ArrayList(matches)
+                    count = matches.size
+                }
             }
-            @Suppress("UNCHECKED_CAST")
-            override fun publishResults(constraint:CharSequence?, results:FilterResults?) {
-                clear()
-                val matches = results?.values as? List<String> ?: emptyList()
-                addAll(matches)
-                notifyDataSetChanged()
+
+            override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+                // Filter.publishResults runs on the UI thread. Guard adapter updates so a bad
+                // filter result cannot crash invoice entry while the user types.
+                val matches = (results?.values as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                runCatching {
+                    setNotifyOnChange(false)
+                    clear()
+                    addAll(matches)
+                    notifyDataSetChanged()
+                }.onFailure {
+                    runCatching {
+                        clear()
+                        addAll(allValues)
+                        notifyDataSetChanged()
+                    }
+                }
             }
-            override fun convertResultToString(resultValue:Any?):CharSequence = resultValue?.toString().orEmpty()
+
+            override fun convertResultToString(resultValue: Any?): CharSequence =
+                resultValue?.toString().orEmpty()
         }
-        override fun getFilter():Filter = nameFilter
-        override fun getDropDownView(position:Int, convertView:View?, parent:ViewGroup):View {
+
+        override fun getFilter(): Filter = nameFilter
+
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = super.getDropDownView(position, convertView, parent)
             (view as? TextView)?.apply {
-                textDirection=View.TEXT_DIRECTION_RTL
+                textDirection = View.TEXT_DIRECTION_RTL
                 setTextColor(TEXT)
-                textSize=15f
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-                minHeight=dp(44)
+                textSize = 15f
+                setPadding(this@suggestionAdapter.dp(14), this@suggestionAdapter.dp(12), this@suggestionAdapter.dp(14), this@suggestionAdapter.dp(12))
+                minHeight = this@suggestionAdapter.dp(44)
             }
             return view
         }
     }
+}
 
 fun Context.toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
 fun String.num():BigDecimal?=map{if(it in '٠'..'٩' )('0'.code+(it-'٠')).toChar() else it}.joinToString("").replace("٫",".").trim().toBigDecimalOrNull()
