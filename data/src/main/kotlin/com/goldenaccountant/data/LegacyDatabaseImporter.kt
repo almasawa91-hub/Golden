@@ -98,20 +98,50 @@ object LegacyDatabaseImporter {
                     archivedExisting += (rows - (after - before)).coerceAtLeast(0L)
                 }
 
-                // Add legacy account groups only when their IDs do not collide with Golden's chart.
+                // Map source groups by meaning/name, never by raw numeric ID: source IDs may
+                // collide with Golden's seeded chart and silently put accounts in the wrong category.
+                val sourceGroups = mutableListOf<Triple<Long, String, Long>>()
                 source.rawQuery("SELECT id, name, parent_id FROM account_tree ORDER BY id", null).use { c ->
                     while (c.moveToNext()) {
                         val id = c.getLong(0)
                         val name = c.getString(1)?.trim().orEmpty().ifEmpty { "مجموعة قديمة $id" }
                         val parent = if (c.isNull(2)) 0L else c.getLong(2)
-                        val before = scalar(target, "SELECT COUNT(*) FROM account_groups WHERE id = ?", arrayOf(id))
-                        target.execSQL("INSERT OR IGNORE INTO account_groups(id,name,parentId) VALUES(?,?,?)", arrayOf(id, name, parent))
-                        if (before == 0L && scalar(target, "SELECT COUNT(*) FROM account_groups WHERE id = ?", arrayOf(id)) > 0L) groupsAdded++
+                        sourceGroups += Triple(id, name, parent)
                     }
                 }
-
-                val groupIds = mutableSetOf<Long>()
-                target.query("SELECT id FROM account_groups").use { c -> while (c.moveToNext()) groupIds += c.getLong(0) }
+                fun normalizedGroupName(value: String): String = value.trim().lowercase(Locale.ROOT)
+                    .replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ى", "ي")
+                val targetGroupNames = mutableMapOf<Long, String>()
+                target.query("SELECT id,name FROM account_groups").use { c ->
+                    while (c.moveToNext()) targetGroupNames[c.getLong(0)] = c.getString(1).orEmpty()
+                }
+                val sourceGroupToTarget = mutableMapOf<Long, Long>()
+                val newlyCreatedSourceGroups = mutableSetOf<Long>()
+                sourceGroups.forEach { (sourceId, sourceName, _) ->
+                    val normalized = normalizedGroupName(sourceName)
+                    val matched = targetGroupNames.entries.firstOrNull { normalizedGroupName(it.value) == normalized }?.key
+                    if (matched != null) {
+                        sourceGroupToTarget[sourceId] = matched
+                    } else {
+                        target.execSQL("INSERT INTO account_groups(name,parentId) VALUES(?,0)", arrayOf(sourceName))
+                        val newId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
+                        sourceGroupToTarget[sourceId] = newId
+                        targetGroupNames[newId] = sourceName
+                        newlyCreatedSourceGroups += sourceId
+                        groupsAdded++
+                    }
+                }
+                // Rebuild parent links only for newly created groups; Golden's seeded chart stays intact.
+                sourceGroups.forEach { (sourceId, _, sourceParentId) ->
+                    if (sourceId in newlyCreatedSourceGroups) {
+                        val targetId = sourceGroupToTarget[sourceId] ?: return@forEach
+                        val targetParentId = sourceGroupToTarget[sourceParentId] ?: 0L
+                        if (targetParentId != targetId) {
+                            target.execSQL("UPDATE account_groups SET parentId=? WHERE id=?", arrayOf(targetParentId, targetId))
+                        }
+                    }
+                }
+                val groupIds = targetGroupNames.keys.toMutableSet()
 
                 // Build a real category for each chart group. Keep cashboxes and banks separate,
                 // and add ancestor links so "الأصول" also shows all its subgroups.
@@ -192,12 +222,11 @@ object LegacyDatabaseImporter {
                         val preferredGroup = when (customerType) {
                             1L -> 221L; 4L -> 121L; 5L -> 322L; 6L -> 411L; 7L -> 124L; else -> 123L
                         }
-                        val groupId = when {
-                            sourceGroup in groupIds -> sourceGroup
-                            preferredGroup in groupIds -> preferredGroup
-                            123L in groupIds -> 123L
-                            else -> groupIds.firstOrNull() ?: 1L
-                        }
+                        val groupId = sourceGroupToTarget[sourceGroup]
+                            ?: preferredGroup.takeIf { it in groupIds }
+                            ?: 123L.takeIf { it in groupIds }
+                            ?: groupIds.firstOrNull()
+                            ?: 1L
                         val phone = c.getString(2)?.trim()?.takeIf { it.isNotEmpty() }
                         val existing = scalarNullable(target, "SELECT id FROM accounts WHERE name = ? COLLATE NOCASE LIMIT 1", arrayOf(name))
                         val targetId = if (existing != null) {
@@ -536,8 +565,8 @@ object LegacyDatabaseImporter {
 
                 val lineGross = lineRecords.fold(BigDecimal.ZERO) { sum, line -> sum + line.second * line.third }
                 val memo = buildString {
-                    append("استيراد محاسب سوفت")
-                    if (billNo.isNotBlank() && billNo != "0") append(" • رقم المصدر ").append(billNo)
+                    append(memoSource.ifBlank { if (kind == InvoiceKind.SALE) "فاتورة بيع" else "فاتورة شراء" })
+                    if (billNo.isNotBlank() && billNo != "0") append(" • رقم ").append(billNo)
                     if (memoSource.isNotBlank()) append(" • ").append(memoSource)
                     if (lineRecords.isEmpty()) append(" • لا توجد تفاصيل أصناف قابلة للربط في المصدر")
                     else if ((lineGross - amount).abs() > BigDecimal("0.01")) append(" • إجمالي التفاصيل يختلف عن إجمالي رأس الفاتورة القديم")
@@ -685,7 +714,7 @@ object LegacyDatabaseImporter {
             val memo = lines.firstOrNull { it.memo.isNotBlank() }?.memo ?: "سند قديم رقم $pId"
             target.execSQL(
                 "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
-                arrayOf(date, "ترحيل محاسب سوفت • $memo", refType, groupRefId, System.currentTimeMillis()),
+                arrayOf(date, memo, refType, groupRefId, System.currentTimeMillis()),
             )
             val entryId = scalar(target, "SELECT last_insert_rowid()", emptyArray())
             lines.forEach { line ->
@@ -714,7 +743,6 @@ object LegacyDatabaseImporter {
             """SELECT id,cus_id,"in","out",date_,remarks,t_cus_id,curr_id,curr_price
                FROM `$table`
                WHERE tr_type=0 AND (bill_id=0 OR (bill_id<0 AND p_id=0))
-                 AND NOT (remarks LIKE '%رصيد افتتاحي%' AND date_='01-01-2026')
                ORDER BY id""",
             null,
         ).use { c ->
@@ -758,7 +786,7 @@ object LegacyDatabaseImporter {
                 val mainCredit = if (direction.signum() < 0) micro else 0L
                 val contraDebit = mainCredit
                 val contraCredit = mainDebit
-                val memo = "ترحيل حركة قديمة • " + (c.getString(5)?.trim().orEmpty().ifBlank { "حركة رقم $sourceId" })
+                val memo = c.getString(5)?.trim().orEmpty().ifBlank { "حركة محاسبية رقم $sourceId" }
                 target.execSQL(
                     "INSERT INTO journal_entries(date,memo,refType,refId,createdAt) VALUES(?,?,?,?,?)",
                     arrayOf(date, memo, refType, sourceId, System.currentTimeMillis()),
