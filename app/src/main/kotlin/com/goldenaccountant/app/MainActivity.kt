@@ -239,7 +239,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                         buildString {
-                            appendLine("معاينة قاعدة محاسب سوفت")
+                            appendLine("فحص قاعدة البيانات قبل اعتمادها في المحاسب الذهبي")
                             appendLine("حجم الملف: ${incoming.length()} بايت")
                             appendLine("سلامة SQLite: سليمة")
                             appendLine()
@@ -265,10 +265,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 var importStarted = false
                 val dialog = androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("مراجعة الدمج — محاسب سوفت")
+                    .setTitle("تأكيد اعتماد البيانات في المحاسب الذهبي")
                     .setMessage(report)
                     .setNegativeButton("إلغاء", null)
-                    .setPositiveButton("بدء الدمج الآمن") { _, _ ->
+                    .setPositiveButton("استيراد واعتماد البيانات") { _, _ ->
                         importStarted = true
                         runLegacyImport(incoming)
                     }
@@ -294,8 +294,8 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             val progress = androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                .setTitle("جارٍ دمج البيانات")
-                .setMessage("يتم حفظ البيانات القديمة ومطابقة الحسابات والأصناف. لا تغلق التطبيق.")
+                .setTitle("جارٍ اعتماد البيانات في المحاسب الذهبي")
+                .setMessage("يتم حفظ الحسابات وتصنيفاتها والأصناف والأرصدة والفواتير والقيود في قاعدة Golden التشغيلية. لا تغلق التطبيق.")
                 .setCancelable(false)
                 .create()
             progress.show()
@@ -304,7 +304,7 @@ class MainActivity : AppCompatActivity() {
                     LegacyDatabaseImporter.import(incoming, app.db.openHelper.writableDatabase)
                 }
                 androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("اكتمل الدمج الآمن")
+                    .setTitle("تم اعتماد البيانات في المحاسب الذهبي")
                     .setMessage(buildString {
                         appendLine("مجموعات حسابات جديدة: ${result.groupsAdded}")
                         appendLine("حسابات جديدة: ${result.accountsAdded}")
@@ -318,8 +318,8 @@ class MainActivity : AppCompatActivity() {
                         appendLine("حركات الحسابات المباشرة التي تم ترحيلها: ${result.manualTransactionsPosted}")
                         appendLine("مجموعات حركات تحتاج مراجعة: ${result.voucherGroupsForReview}")
                         appendLine("حركات منفردة تحتاج مراجعة: ${result.manualTransactionsForReview}")
-                        appendLine("سجلات المصدر المحفوظة: ${result.archivedRowsAdded}")
-                        appendLine("سجلات كانت محفوظة سابقاً: ${result.archivedRowsAlreadyPresent}")
+                        appendLine("سجلات محفوظة بأمان لاستكمال المطابقة: ${result.archivedRowsAdded}")
+                        appendLine("سجلات موجودة مسبقاً ولم تتكرر: ${result.archivedRowsAlreadyPresent}")
                         appendLine()
                         appendLine("تنبيه: أي سند غير متوازن أو يفتقد ربط حساب بقي في الأرشيف للمراجعة. بعض الفواتير القديمة قد تحمل ملاحظة إذا كانت تفاصيلها لا تطابق إجمالي رأس الفاتورة.")
                     })
