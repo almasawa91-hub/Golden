@@ -8,8 +8,9 @@ import android.text.StaticLayout
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import java.io.OutputStream
+import kotlin.math.max
 
-/** إنشاء تقارير PDF متعددة الصفحات مع اتجاه RTL وتخطيط نص Android للنص العربي. */
+/** إنشاء ملفات PDF بجداول حقيقية، خلايا متعددة الأسطر، وتكرار رأس الجدول في كل صفحة مع دعم RTL. */
 object ReportPdf {
     fun write(
         output: OutputStream,
@@ -19,107 +20,136 @@ object ReportPdf {
         pageWidth: Int = 595,
         pageHeight: Int = 842,
     ) {
+        require(pageWidth >= 100 && pageHeight >= 160) { "أبعاد صفحة PDF غير صالحة" }
         val document = PdfDocument()
         val thermal = pageWidth < 300
-        val margin = if (thermal) 8f else 34f
-        val usableWidth = (pageWidth - margin * 2).toInt()
-        val titleSize = if (thermal) 12f else 18f
+        val margin = if (thermal) 8f else 30f
+        val padding = if (thermal) 3f else 6f
+        val usableWidth = (pageWidth - margin * 2).toInt().coerceAtLeast(1)
+        val bottom = pageHeight - margin
+        val tableColumnCount = (if (columns.isNotEmpty()) columns.size else rows.maxOfOrNull { it.size } ?: 1).coerceIn(1, 8)
+        val columnWidth = FloatArray(tableColumnCount) { usableWidth.toFloat() / tableColumnCount }
+        if (tableColumnCount > 0) columnWidth[tableColumnCount - 1] = usableWidth - columnWidth.dropLast(1).sum()
+
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.BLACK
-            textSize = if (thermal) 8.5f else 11.5f
+            textSize = if (thermal) 8.5f else 10.5f
         }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.rgb(15, 23, 42)
-            textSize = titleSize
+            textSize = if (thermal) 12f else 18f
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         }
-        val smallPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        val headerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(30, 64, 175)
+            textSize = if (thermal) 8f else 10f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.DKGRAY
             textSize = if (thermal) 7f else 9f
         }
-        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = android.graphics.Color.LTGRAY
-            strokeWidth = 0.7f
+            strokeWidth = if (thermal) 0.5f else 0.7f
+            style = Paint.Style.STROKE
         }
-        fun layout(text: String, paint: TextPaint): StaticLayout =
-            StaticLayout.Builder.obtain(text, 0, text.length, paint, usableWidth)
+        val headerFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(241, 245, 249)
+            style = Paint.Style.FILL
+        }
+
+        fun layout(text: String, paint: TextPaint, width: Int): StaticLayout {
+            val safeText = text.ifEmpty { " " }
+            return StaticLayout.Builder.obtain(safeText, 0, safeText.length, paint, width.coerceAtLeast(1))
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setTextDirection(TextDirectionHeuristics.RTL)
                 .setIncludePad(false)
+                .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
+                .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
                 .build()
+        }
 
         var pageNumber = 0
         var page: PdfDocument.Page? = null
         var canvas: Canvas? = null
-        var y = 0f
+        var y = margin
 
-        fun startPage(): PdfDocument.Page {
+        fun drawCellText(target: Canvas, textLayout: StaticLayout, left: Float, top: Float) {
+            target.save()
+            target.translate(left + padding, top + padding)
+            textLayout.draw(target)
+            target.restore()
+        }
+
+        fun drawColumnCells(target: Canvas, values: List<String>, top: Float, heights: List<StaticLayout>, rowHeight: Float, fill: Paint?) {
+            var x = margin
+            for (i in 0 until tableColumnCount) {
+                val width = columnWidth[i]
+                if (fill != null) target.drawRect(x, top, x + width, top + rowHeight, fill)
+                target.drawRect(x, top, x + width, top + rowHeight, borderPaint)
+                drawCellText(target, heights[i], x, top)
+                x += width
+            }
+        }
+
+        fun headerLayouts(): List<StaticLayout> = (0 until tableColumnCount).map { i ->
+            layout(columns.getOrNull(i).orEmpty(), headerPaint, (columnWidth[i] - padding * 2).toInt())
+        }
+
+        fun startPage() {
             pageNumber++
             val started = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
             page = started
             canvas = started.canvas
             y = margin
-            val titleLayout = layout(title, titlePaint)
-            titleLayout.draw(started.canvas.apply { save(); translate(margin, y) })
-            started.canvas.restore()
-            y += titleLayout.height + 8f
-            val meta = layout("تاريخ التقرير: ${today()}    •    المحاسب الذهبي", smallPaint)
-            started.canvas.save()
-            started.canvas.translate(margin, y)
-            meta.draw(started.canvas)
-            started.canvas.restore()
-            y += meta.height + 12f
-            started.canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
-            y += 8f
+            val titleLayout = layout(title, titlePaint, usableWidth)
+            drawCellText(started.canvas, titleLayout, margin, y)
+            y += titleLayout.height + if (thermal) 4f else 8f
+            val meta = layout("تاريخ التقرير: ${today()} • المحاسب الذهبي", metaPaint, usableWidth)
+            drawCellText(started.canvas, meta, margin, y)
+            y += meta.height + if (thermal) 6f else 12f
+            started.canvas.drawLine(margin, y, pageWidth - margin, y, borderPaint)
+            y += if (thermal) 4f else 8f
+
             if (columns.isNotEmpty()) {
-                val headerText = columns.mapIndexed { index, name -> "${name}: " }.joinToString("     ")
-                val header = layout(headerText, titlePaint.apply { textSize = if (thermal) 8.5f else 10.5f })
-                started.canvas.save()
-                started.canvas.translate(margin, y)
-                header.draw(started.canvas)
-                started.canvas.restore()
-                y += header.height + 6f
-                started.canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
-                y += 8f
-                titlePaint.textSize = titleSize
+                val layouts = headerLayouts()
+                val headerHeight = max(if (thermal) 18f else 24f, layouts.maxOfOrNull { it.height.toFloat() } ?: 0f + padding * 2)
+                drawColumnCells(started.canvas, columns, y, layouts, headerHeight, headerFill)
+                y += headerHeight
             }
-            return started
         }
 
-        fun drawRow(text: String) {
-            var block = layout(text, textPaint)
-            if (page == null || y + block.height > pageHeight - margin) {
+        fun rowValues(cells: List<String>): List<String> =
+            (0 until tableColumnCount).map { cells.getOrNull(it).orEmpty() }
+
+        fun drawRow(cells: List<String>) {
+            val values = rowValues(cells)
+            val layouts = values.mapIndexed { i, value ->
+                layout(value, textPaint, (columnWidth[i] - padding * 2).toInt())
+            }
+            val rowHeight = max(if (thermal) 18f else 22f, (layouts.maxOfOrNull { it.height.toFloat() } ?: 0f) + padding * 2)
+            if (page == null || y + rowHeight > bottom) {
                 page?.let { document.finishPage(it) }
                 startPage()
-                block = layout(text, textPaint)
             }
-            val currentCanvas = canvas ?: return
-            currentCanvas.save()
-            currentCanvas.translate(margin, y)
-            block.draw(currentCanvas)
-            currentCanvas.restore()
-            y += block.height + 7f
-            currentCanvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
-            y += 7f
+            val target = canvas ?: return
+            drawColumnCells(target, values, y, layouts, rowHeight, null)
+            y += rowHeight
         }
 
         try {
             startPage()
             if (rows.isEmpty()) {
-                drawRow("لا توجد بيانات لعرضها.")
+                drawRow(if (tableColumnCount == 1) listOf("لا توجد بيانات لعرضها.") else listOf("لا توجد بيانات لعرضها.", ""))
             } else {
-                rows.forEachIndexed { index, cells ->
-                    val line = if (columns.isEmpty()) cells.joinToString("   •   ")
-                    else cells.mapIndexed { i, cell ->
-                        val label = columns.getOrNull(i)
-                        if (label.isNullOrBlank()) cell else "$label: $cell"
-                    }.joinToString("     |     ")
-                    drawRow("${index + 1}. $line")
-                }
+                rows.forEach { drawRow(it) }
             }
             page?.let { document.finishPage(it) }
+            page = null
             document.writeTo(output)
         } finally {
+            page?.let { runCatching { document.finishPage(it) } }
             document.close()
         }
     }
